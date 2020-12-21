@@ -188,6 +188,7 @@ def get_human_parsing(img):
 def train_generator():
     for (idx, [img_path, cloth_path]) in enumerate(train_path):
         img = np.asarray(Image.open(DATASET_SRC / img_path))
+        # TODO: Have not done !
 
 def show_img(img):
     plt.figure()
@@ -261,9 +262,99 @@ show_img(sample_parsing)
 # Personal representation:
 #   - Pose heatmap (18 channels) Check (3 channels)
 #   - Human segmentation (1 channel) Check (3 channels)
-#   - Face and hair segmentation (3 channels)
+#   - Face and hair segmentation (3 channels). Human parser prediction
 # 
 
+# - Labels:
+#       - Clothing mask: human parser prediction.
+#       - original person with clothes image.
 
+# - Predict:
+#       - The course agostic of the person.
+#       - The clothing mask.
+
+
+# %%
+ 
+ # This is the U-net model
+
+"""
+Read this u-net article with the cute meow:
+    https://towardsdatascience.com/u-net-b229b32b4a71
+"""
+
+from tensorflow_examples.models.pix2pix import pix2pix
+mobile_net_model = tf.keras.applications.MobileNetV2(
+    input_shape=IMG_SHAPE, 
+    include_top=False)
+mobile_net_model.trainable = False
+# Use the activations of these layers
+layer_names = [
+    'block_1_expand_relu',   # 128x96
+    'block_3_expand_relu',   # 64x48
+    'block_6_expand_relu',   # 32x24
+    'block_13_expand_relu',  # 16x12
+    'block_16_project',      # 8x6
+]
+layers = [mobile_net_model.get_layer(name).output for name in layer_names]
+
+# Create the feature extraction model
+wrap_mobile_net_model = tf.keras.Model(inputs=mobile_net_model.input, outputs=layers)
+wrap_mobile_net_model.trainable = False
+
+
+inputs = tf.keras.Input(shape=IMG_SHAPE)
+out4, out3, out2, out1, out0 = wrap_mobile_net_model(inputs, training=False)
+
+up1_tensor = pix2pix.upsample(512, 3)(out0)
+
+cat1_tensor = tf.keras.layers.concatenate([up1_tensor, out1])
+up2_tensor = pix2pix.upsample(256, 3)(cat1_tensor)
+
+cat2_tensor = tf.keras.layers.concatenate([up2_tensor, out2])
+up3_tensor = pix2pix.upsample(128, 3)(cat2_tensor)
+
+cat3_tensor = tf.keras.layers.concatenate([up3_tensor, out3])
+up4_tensor = pix2pix.upsample(64, 3)(cat3_tensor)
+
+cat4_tensor = tf.keras.layers.concatenate([up4_tensor, out4])
+
+# n channels (or neurons, or feature vectors) is 4 because we are predicting 2 things:
+#       - course human image
+#       - clothing mask on the person
+
+out = tf.keras.layers.Conv2DTranspose(
+    4, 3, strides=2,
+    padding='same',
+    activation='sigmoid'
+) (cat4_tensor)
+
+# We will not use model, we will just use it to see the summary!
+model = tf.keras.Model(inputs, out)
+model.summary()
+
+# %%
+
+# Definition of losses and train step
+
+def loss_function():
+    loss_object = tf.keras.losses.CategoricalCrossentropy()
+    pass
+
+optimizer = tf.keras.optimizers.Adam(lr=2e-3)
+
+def train_step(person_reprs, clothings, labels):
+    # Use gradient tape
+    pass
+
+# %%
+
+# Training the model
+
+EPOCHS = 1
+
+for epoch in EPOCHS:
+    # Train train train
+    pass
 
 
