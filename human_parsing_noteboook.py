@@ -91,8 +91,26 @@ LABEL_NAME = {
     'Right-shoe': 19
 }
 
-IMG_SHAPE = (300, 300, 3)
-PARSING_SHAPE = (288, 288, 1)
+IMG_SHAPE = (256, 192, 3)
+PARSING_SHAPE = (256, 192, 1)
+
+# %%
+
+def plot_history(history):
+    plt.figure()
+    plt.plot(history.history['loss'])
+    plt.title('Model Loss')
+    plt.ylabel('Loss')
+    plt.xlabel('Epoch')
+    plt.show()
+
+    plt.figure()
+    plt.plot(history.history['acc'])
+    plt.title('Model Accuracy')
+    plt.ylabel('Accuracy')
+    plt.xlabel('Epoch')
+    plt.show()
+
 
 def show_img(img):
     plt.figure()
@@ -106,20 +124,6 @@ def load_image(image_path):
     img = tf.image.resize(img, (128, 128))
     img = tf.keras.applications.inception_v3.preprocess_input(img)
     return img, image_path
-
-# %%
-
-r = np.random.randint(0, 5000)
-
-sample_input = np.asarray(Image.open(TRAIN_INPUT_PATH / (TRAIN_NAME[r] + INPUT_EXT)))
-sample_label = np.asarray(Image.open(TRAIN_PARSING_PATH / (TRAIN_NAME[r] + PARSING_EXT)))
-
-print(f"Shape: {sample_input.shape}")
-show_img(sample_input)
-show_img(sample_label)
-
-
-# %%
 
 def train_gen():
     for file_name in TRAIN_NAME:
@@ -177,6 +181,23 @@ def get_input_and_label(input_path, label_path):
     return test_o, resized_label
 
 
+# %%
+
+# See the actual un reshaped data
+
+r = np.random.randint(0, 5000)
+
+sample_input = np.asarray(Image.open(TRAIN_INPUT_PATH / (TRAIN_NAME[r] + INPUT_EXT)))
+sample_label = np.asarray(Image.open(TRAIN_PARSING_PATH / (TRAIN_NAME[r] + PARSING_EXT)))
+
+print(f"Shape: {sample_input.shape}")
+show_img(sample_input)
+show_img(sample_label)
+
+# %%
+
+# See the data in dataset generator
+
 # Tensorflow dataset object
 ds = tf.data.Dataset.from_generator(train_gen, output_signature=(
     tf.TensorSpec(shape=IMG_SHAPE, dtype=tf.float32),
@@ -196,12 +217,15 @@ a, b = next(it)
 show_img(a)
 show_img(b)
 
+# %%
+
+
 
 # %%
 
 # Build a simple Convolutional Autoencoder model. Don't use this model tho
 
-inputs = tf.keras.layers.Input(shape=(300, 300, 3))
+inputs = tf.keras.layers.Input(shape=IMG_SHAPE)
 x = tf.keras.layers.Conv2D(
     filters=40, 
     kernel_size=(3, 3), 
@@ -260,14 +284,14 @@ model.summary()
 
 from tensorflow_examples.models.pix2pix import pix2pix
 vgg16_model = tf.keras.applications.VGG16(
-    input_shape=(300, 300, 3),
+    input_shape=IMG_SHAPE,
     include_top=False,
     weights='imagenet'
 )
 vgg16_model.trainable = False
 # vgg16_model.summary()
 
-inputs = tf.keras.Input(shape=(300, 300, 3))
+inputs = tf.keras.Input(shape=IMG_SHAPE)
 x = vgg16_model(inputs, training=False)
 
 x = pix2pix.upsample(512, 3)(x)
@@ -276,7 +300,6 @@ x = pix2pix.upsample(128, 3)(x)
 x = pix2pix.upsample(64, 3)(x)
 x = pix2pix.upsample(32, 3)(x)
 x = pix2pix.upsample(16, 3)(x)
-
 out = tf.keras.layers.Conv2D(
     1, 3, strides=2,
     padding='same',
@@ -291,6 +314,74 @@ model.compile(
     loss='binary_crossentropy',
     metrics=['acc']
 )
+
+# %%
+
+
+vgg16_model.summary()
+
+
+# %%
+
+# This is the U-net model
+
+"""
+Read this u-net article with the cute meow:
+    https://towardsdatascience.com/u-net-b229b32b4a71
+"""
+
+from tensorflow_examples.models.pix2pix import pix2pix
+mobile_net_model = tf.keras.applications.MobileNetV2(
+    input_shape=IMG_SHAPE, 
+    include_top=False)
+mobile_net_model.trainable = False
+# Use the activations of these layers
+layer_names = [
+    'block_1_expand_relu',   # 128x96
+    'block_3_expand_relu',   # 64x48
+    'block_6_expand_relu',   # 32x24
+    'block_13_expand_relu',  # 16x12
+    'block_16_project',      # 8x6
+]
+layers = [mobile_net_model.get_layer(name).output for name in layer_names]
+
+# Create the feature extraction model
+wrap_mobile_net_model = tf.keras.Model(inputs=mobile_net_model.input, outputs=layers)
+wrap_mobile_net_model.trainable = False
+
+
+inputs = tf.keras.Input(shape=IMG_SHAPE)
+out4, out3, out2, out1, out0 = wrap_mobile_net_model(inputs, training=False)
+
+up1_tensor = pix2pix.upsample(512, 3)(out0)
+
+cat1_tensor = tf.keras.layers.concatenate([up1_tensor, out1])
+up2_tensor = pix2pix.upsample(256, 3)(cat1_tensor)
+
+cat2_tensor = tf.keras.layers.concatenate([up2_tensor, out2])
+up3_tensor = pix2pix.upsample(128, 3)(cat2_tensor)
+
+cat3_tensor = tf.keras.layers.concatenate([up3_tensor, out3])
+up4_tensor = pix2pix.upsample(64, 3)(cat3_tensor)
+
+cat4_tensor = tf.keras.layers.concatenate([up4_tensor, out4])
+
+out = tf.keras.layers.Conv2DTranspose(
+    1, 3, strides=2,
+    padding='same',
+    activation='sigmoid'
+) (cat4_tensor)
+
+
+model = tf.keras.Model(inputs, out)
+model.summary()
+model.compile(
+    # loss=tf.keras.losses.SparseCategoricalCrossentropy(),
+    loss='binary_crossentropy',
+    metrics=['acc']
+)
+
+
 # %%
 
 # Training
@@ -320,15 +411,20 @@ show_img(ref)
 
 # %%
 
+plot_history(history)
+
+
+# %%
+
 # Save model if you want to
 
 # Include the epoch in the file name (uses `str.format`)
-checkpoint_path = "checkpoints/human_parsing_cp-20epochs.ckpt"
+checkpoint_path = "checkpoints/human_parsing_mbv2-20epochs.ckpt"
 checkpoint_dir = os.path.dirname(checkpoint_path)
 
 model.save_weights(checkpoint_path)
 
-model.save('models/human_parsing_cp-20epochs')
+model.save('models/human_parsing_mbv2-20epochs')
 
 # %%
 
