@@ -18,12 +18,14 @@ constrain the synthesis process.
 2. To achieve the pose detection feature, [mediapipe](https://google.github.io/mediapipe/) from Google was taken into advantage. To test the pose detection, please refer to the [pose doc](https://google.github.io/mediapipe/solutions/pose.html) on the library's page, and navigate to [`pose_notebook.py`](./pose_notebook.py) to test on your webcam. Note that the functionality has also been imported to the main pipeline in [`notebook.py`](./notebook.py)
 
 3. To achieve human parsing feature, a fully connected convolutional auto-encoder with U-Net architecture was implemented using pretrained model [MobileNetV2](https://www.tensorflow.org/api_docs/python/tf/keras/applications/MobileNetV2) that makes use of 'imagenet' weights and deconvolutional (upsampling) layers taken from [pix2pix](https://www.tensorflow.org/tutorials/generative/pix2pix) tensorflow examples. The idea is also taken from the (human parsing papers)[](#Reference).
-   * Here is the loss and accuracy achieved by the U-Net with MobileNetV2:
+   * Here is the loss and accuracy achieved by the U-Net with MobileNetV2, along with the results:
 
-      <img src="./doc/human_prs_acc.png" width="400" />
-      <img src="./doc/human_prs_loss.png" width="400" />
+<div style = "text-align:center;">
+  <img src="./doc/human_prs_acc.png" width="300" />
+  <img src="./doc/human_prs_loss.png" width="300" />
+</div>
+      
 <br>
-
 <div style = "text-align:center;">
   <img src="./doc/b1.png" width="102" />
   <img src="./doc/b2.png" width="100" />
