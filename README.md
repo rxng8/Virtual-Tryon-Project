@@ -13,7 +13,7 @@ constrain the synthesis process.
     
     ![img](./doc/human_repr.png)
 
-    * These feature, are then concatnated with the clothing image, going through a encoder-decoder like network. And predict the actual try-on image based on perceptual loss with the original person with clothing ground truth.
+    * These feature, are then concatnated with the clothing image, going through a encoder-decoder like network with skip connections like U-NET. And predict the actual try-on image based on perceptual loss with the original person with clothing ground truth.
 
 2. To achieve the pose detection feature, [mediapipe](https://google.github.io/mediapipe/) from Google was taken into advantage. To test the pose detection, please refer to the [pose doc](https://google.github.io/mediapipe/solutions/pose.html) on the library's page, and navigate to [`pose_notebook.py`](./pose_notebook.py) to test on your webcam. Note that the functionality has also been imported to the main pipeline in [`notebook.py`](./notebook.py)
 
