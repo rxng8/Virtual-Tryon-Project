@@ -33,6 +33,10 @@ constrain the synthesis process.
   <img src="./doc/b4.png" width="100" />
   <img src="./doc/b5.png" width="100" />
 </div>
+
+<div style = "text-align:center;">
+  <img src="./doc/human_prs.png" width="900" />
+</div>
   
 <br>
 
