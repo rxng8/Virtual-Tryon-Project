@@ -333,10 +333,10 @@ model.save('models/human_parsing_cp-20epochs')
 # %%
 
 # load models. (If you have saved model)
-# new_model = tf.keras.models.load_model('models/human_parsing_cp-20epochs')
+new_model = tf.keras.models.load_model('models/human_parsing_cp-20epochs')
 
 # Check its architecture
-# new_model.summary()
+new_model.summary()
 
 # %%
 # Predict on new model
