@@ -70,6 +70,7 @@ VAL_PARSING_PATH = DATASET_PATH / \
 
 # Label name, the actual label in the parsing image. note that it is 1 channel
 LABEL_NAME = {
+    'Background': 0,
     'Hat': 1,
     'Hair': 2,
     'Glove': 3,
@@ -92,7 +93,11 @@ LABEL_NAME = {
 }
 
 IMG_SHAPE = (256, 192, 3)
-PARSING_SHAPE = (256, 192, 1)
+PARSING_SHAPE = (256, 192)
+
+# The reason why I named it single is because we use this to parse binary. I.e whether
+# it is the person or not.
+PARSING_SINGLE_SHAPE = (256, 192, 1)
 
 # %%
 
@@ -113,8 +118,31 @@ def plot_history(history):
 
 
 def show_img(img):
-    plt.figure()
-    plt.imshow(img)
+    if len(img.shape) == 3:
+        plt.figure()
+        plt.imshow(img)
+        plt.show()
+    elif len(img.shape) == 2:
+        plt.figure()
+        plt.imshow(img, cmap='gray')
+        plt.show()
+
+def plot_parsing_map(test_predict):
+    width=15
+    height=10
+    rows = 4
+    cols = 5
+    axes=[]
+    fig=plt.figure(figsize=(width, height))
+
+    for i, (label_name, label_channel) in enumerate(LABEL_NAME.items()):
+        
+        axes.append(fig.add_subplot(rows, cols, i+1))
+        subplot_title=(label_name)
+        axes[-1].set_title(subplot_title)
+        axes[-1].axis('off')
+        plt.imshow(test_predict[0, :, :, label_channel] > 0.5, cmap='gray')
+    fig.tight_layout()
     plt.show()
 
 
@@ -125,7 +153,7 @@ def load_image(image_path):
     img = tf.keras.applications.inception_v3.preprocess_input(img)
     return img, image_path
 
-def train_gen():
+def train_gen_single_parsing():
     for file_name in TRAIN_NAME:
         img = tf.convert_to_tensor(
             np.asarray(
@@ -147,14 +175,64 @@ def train_gen():
                     dtype=float
                 ), axis=2
             )
-        if len(label.shape) != 3:
-            continue
         label[label > 0] = 1
         label = tf.convert_to_tensor(label, dtype=tf.float32)
-        resized_label = tf.keras.layers.experimental.preprocessing.Resizing(*PARSING_SHAPE[:2])(label)
-        # rescaled_label = tf.keras.layers.experimental.preprocessing.Rescaling(scale=1./255)(resized_label)
+        resized_label = tf.keras.layers.experimental.preprocessing.Resizing(*PARSING_SINGLE_SHAPE[:2])(label)
         yield rescaled_img, resized_label
-        # yield rescaled_img, rescaled_label
+
+def train_gen_multi_parsing():
+    for file_name in TRAIN_NAME:
+        img = tf.convert_to_tensor(
+            np.asarray(
+                Image.open(
+                    TRAIN_INPUT_PATH / (file_name + INPUT_EXT)
+                )
+            ),
+            dtype=tf.float32)
+        if len(img.shape) != 3:
+            continue
+        resized_img = tf.keras.layers.experimental.preprocessing.Resizing(*IMG_SHAPE[:2])(img)
+        rescaled_img = tf.keras.layers.experimental.preprocessing.Rescaling(scale=1./255)(resized_img)
+        label = \
+            np.expand_dims(
+                np.asarray(
+                    Image.open(
+                        TRAIN_PARSING_PATH / (file_name + PARSING_EXT)
+                    ),
+                    dtype=float
+                ), axis=2
+            )
+        label = tf.convert_to_tensor(label, dtype=tf.float32)
+        resized_label = tf.keras.layers.experimental.preprocessing.Resizing(*PARSING_SHAPE[:2])(label)
+        resized_label = tf.reshape(resized_label, PARSING_SHAPE)
+        yield rescaled_img, resized_label
+
+def val_gen_multi_parsing():
+    for file_name in VAL_NAME:
+        img = tf.convert_to_tensor(
+            np.asarray(
+                Image.open(
+                    VAL_INPUT_PATH / (file_name + INPUT_EXT)
+                )
+            ),
+            dtype=tf.float32)
+        if len(img.shape) != 3:
+            continue
+        resized_img = tf.keras.layers.experimental.preprocessing.Resizing(*IMG_SHAPE[:2])(img)
+        rescaled_img = tf.keras.layers.experimental.preprocessing.Rescaling(scale=1./255)(resized_img)
+        label = \
+            np.expand_dims(
+                np.asarray(
+                    Image.open(
+                        VAL_PARSING_PATH / (file_name + PARSING_EXT)
+                    ),
+                    dtype=float
+                ), axis=2
+            )
+        label = tf.convert_to_tensor(label, dtype=tf.float32)
+        resized_label = tf.keras.layers.experimental.preprocessing.Resizing(*PARSING_SHAPE[:2])(label)
+        resized_label = tf.reshape(resized_label, PARSING_SHAPE)
+        yield rescaled_img, resized_label
 
 def get_input_and_label(input_path, label_path):
     test_o = tf.convert_to_tensor(
@@ -175,7 +253,6 @@ def get_input_and_label(input_path, label_path):
                 dtype=float
             ), axis=2
         )
-    label[label > 0] = 1
     label = tf.convert_to_tensor(label, dtype=tf.float32)
     resized_label = tf.keras.layers.experimental.preprocessing.Resizing(*PARSING_SHAPE[:2])(label)
     return test_o, resized_label
@@ -196,34 +273,51 @@ show_img(sample_label)
 
 # %%
 
+# Uncomment this to see the data with dataset generating binary parsing
+
+# ds = tf.data.Dataset.from_generator(train_gen_single_parsing, output_signature=(
+#     tf.TensorSpec(shape=IMG_SHAPE, dtype=tf.float32),
+#     tf.TensorSpec(shape=PARSING_SINGLE_SHAPE, dtype=tf.float32)
+# ))
+
+# # Generator object
+# train_gen_obs = train_gen_single_parsing()
+# it = iter(ds)
+# batchs = ds.repeat().batch(20)
+# batchs
+
+
+# %%
+
 # See the data in dataset generator
 
 # Tensorflow dataset object
-ds = tf.data.Dataset.from_generator(train_gen, output_signature=(
+ds = tf.data.Dataset.from_generator(train_gen_multi_parsing, output_signature=(
     tf.TensorSpec(shape=IMG_SHAPE, dtype=tf.float32),
     tf.TensorSpec(shape=PARSING_SHAPE, dtype=tf.float32)
 ))
 
 # Generator object
-train_gen_obs = train_gen()
+train_gen_obs = train_gen_multi_parsing()
 it = iter(ds)
 batchs = ds.repeat().batch(20)
 batchs
 
 # %%
 
-# a, b = next(train_gen_obs)
+# See some sample data
+
 a, b = next(it)
 show_img(a)
 show_img(b)
-
-# %%
-
 
 
 # %%
 
 # Build a simple Convolutional Autoencoder model. Don't use this model tho
+# The reason why this model is deprecated is it's output shape is 3 dimesions
+# so that we can just predict according to parsing 1 or 0 using binary crossentropy loss.
+# Please use the simple parsing dataset for this model.
 
 inputs = tf.keras.layers.Input(shape=IMG_SHAPE)
 x = tf.keras.layers.Conv2D(
@@ -280,7 +374,26 @@ model.summary()
 
 # %%
 
-# Build another model
+# Train this model
+# create dataset
+ds = tf.data.Dataset.from_generator(train_gen_single_parsing, output_signature=(
+    tf.TensorSpec(shape=IMG_SHAPE, dtype=tf.float32),
+    tf.TensorSpec(shape=PARSING_SINGLE_SHAPE, dtype=tf.float32)
+))
+
+# Generator object
+batchs = ds.repeat().batch(20)
+
+# Train
+history = model.fit(batchs, steps_per_epoch=20, epochs=1)
+
+
+# %%
+
+# Build another model with VGG-16
+# The reason why this model is deprecated is it's output shape is 3 dimesions
+# so that we can just predict according to parsing 1 or 0 using binary crossentropy loss.
+# Please use the simple parsing dataset for this model.
 
 from tensorflow_examples.models.pix2pix import pix2pix
 vgg16_model = tf.keras.applications.VGG16(
@@ -317,8 +430,19 @@ model.compile(
 
 # %%
 
+# Train this model
+# create dataset
+ds = tf.data.Dataset.from_generator(train_gen_single_parsing, output_signature=(
+    tf.TensorSpec(shape=IMG_SHAPE, dtype=tf.float32),
+    tf.TensorSpec(shape=PARSING_SINGLE_SHAPE, dtype=tf.float32)
+))
 
-vgg16_model.summary()
+# Generator object
+batchs = ds.repeat().batch(20)
+
+# Train
+history = model.fit(batchs, steps_per_epoch=20, epochs=1)
+
 
 
 # %%
@@ -366,52 +490,101 @@ up4_tensor = pix2pix.upsample(64, 3)(cat3_tensor)
 
 cat4_tensor = tf.keras.layers.concatenate([up4_tensor, out4])
 
+# There are 20 integer category (not one-hot-encoded), so, n channels (or neurons, or feature vectors) is 20
 out = tf.keras.layers.Conv2DTranspose(
-    1, 3, strides=2,
+    20, 3, strides=2,
     padding='same',
     activation='sigmoid'
 ) (cat4_tensor)
 
-
 model = tf.keras.Model(inputs, out)
 model.summary()
 model.compile(
-    # loss=tf.keras.losses.SparseCategoricalCrossentropy(),
-    loss='binary_crossentropy',
+    loss=tf.keras.losses.SparseCategoricalCrossentropy(),
     metrics=['acc']
 )
 
+# %%
+
+# Training model
+
+# Tensorflow dataset object
+train_ds = tf.data.Dataset.from_generator(train_gen_multi_parsing, output_signature=(
+    tf.TensorSpec(shape=IMG_SHAPE, dtype=tf.float32),
+    tf.TensorSpec(shape=PARSING_SHAPE, dtype=tf.float32)
+))
+train_ds = train_ds.repeat().batch(20)
+
+val_ds = tf.data.Dataset.from_generator(val_gen_multi_parsing, output_signature=(
+    tf.TensorSpec(shape=IMG_SHAPE, dtype=tf.float32),
+    tf.TensorSpec(shape=PARSING_SHAPE, dtype=tf.float32)
+))
+val_ds = val_ds.repeat().batch(20)
+
+history = model.fit(train_ds, steps_per_epoch=20, epochs=50, validation_data=val_ds)
+
+plot_history(history)
 
 # %%
 
-# Training
-history = model.fit(batchs, steps_per_epoch=20, epochs=50)
+# Testing for binary classification. Uncomment to test
+
+# r = np.random.randint(0, 5000)
+# test_o, test_gt = get_input_and_label(
+#     VAL_INPUT_PATH / (VAL_NAME[r] + INPUT_EXT),
+#     VAL_PARSING_PATH / (VAL_NAME[r] + PARSING_EXT)
+# )
+# print("Original image:")
+# show_img(test_o)
+# print("Ground truth:")
+# show_img(test_gt)
+# print("Predicted segmentation:")
+# test_a = model.predict(tf.expand_dims(test_o, axis=0))
+# show_img(np.asarray(test_a[0]))
+
+# ref = test_a[0] > 0.5
+
+# show_img(ref)
 
 
 # %%
 
-# Testing
+# Testing for multi label classification.
 
 r = np.random.randint(0, 5000)
-test_o, test_gt = get_input_and_label(
+test_img, test_gt = get_input_and_label(
     VAL_INPUT_PATH / (VAL_NAME[r] + INPUT_EXT),
     VAL_PARSING_PATH / (VAL_NAME[r] + PARSING_EXT)
 )
 print("Original image:")
-show_img(test_o)
+show_img(test_img)
 print("Ground truth:")
 show_img(test_gt)
 print("Predicted segmentation:")
-test_a = model.predict(tf.expand_dims(test_o, axis=0))
-show_img(np.asarray(test_a[0]))
+# Test predict will now contain 20 channel corressponding to 20 classification labels
+test_predict = model.predict(tf.expand_dims(test_img, axis=0))
 
-ref = test_a[0] > 0.5
-
-show_img(ref)
+plot_parsing_map(test_predict)
 
 # %%
 
-plot_history(history)
+# evaluate on lip dataset
+lip_test = "./dataset/lip_mpv_dataset/MPV_192_256/0VB21E007/0VB21E007-T11@8=person_half_front.jpg"
+test_img = tf.convert_to_tensor(
+    np.asarray(
+        Image.open(
+            lip_test
+        )
+    )
+)
+test_img = tf.keras.layers.experimental.preprocessing.Resizing(*IMG_SHAPE[:2])(test_img)
+test_img = tf.keras.layers.experimental.preprocessing.Rescaling(scale=1./255)(test_img)
+print("Original image:")
+show_img(test_img)
+print("Predicted segmentation:")
+# Test predict will now contain 20 channel corressponding to 20 classification labels
+test_predict = model.predict(tf.expand_dims(test_img, axis=0))
+plot_parsing_map(test_predict)
 
 
 # %%
@@ -424,6 +597,7 @@ checkpoint_dir = os.path.dirname(checkpoint_path)
 
 model.save_weights(checkpoint_path)
 
+# Save the entire model
 model.save('models/human_parsing_mbv2-50epochs')
 
 # %%
@@ -434,39 +608,3 @@ new_model = tf.keras.models.load_model('models/human_parsing_cp-20epochs')
 # Check its architecture
 new_model.summary()
 
-# %%
-# Predict on new model
-r = np.random.randint(0, 5000)
-test_o, test_gt = get_input_and_label(
-    TRAIN_INPUT_PATH / (TRAIN_NAME[r] + INPUT_EXT),
-    TRAIN_PARSING_PATH / (TRAIN_NAME[r] + PARSING_EXT)
-)
-print("Original image:")
-show_img(test_o)
-print("Ground truth:")
-show_img(test_gt)
-print("Predicted segmentation:")
-test_a = new_model.predict(tf.expand_dims(test_o, axis=0))
-show_img(np.asarray(test_a[0]))
-
-ref = test_a[0] > 0.5
-
-show_img(ref)
-
-# %%
-
-# Try with the clothing dataset. This code has not been revised.
-
-# lip_test = "./dataset/lip_mpv_dataset/MPV_192_256/0VB21E007/0VB21E007-T11@8=person_half_front.jpg"
-# test_o = tf.convert_to_tensor(np.asarray(Image.open(lip_test)))
-# test_o = tf.keras.layers.experimental.preprocessing.Resizing(300, 300)(test_o)
-# test_o = tf.keras.layers.experimental.preprocessing.Rescaling(scale=1./255)(test_o)
-
-# show_img(test_o)
-
-# test_a = model.predict(tf.expand_dims(test_o, axis=0))
-# show_img(np.asarray(test_a[0]))
-
-# ref = test_a[0] > 0.64
-
-# show_img(ref)
