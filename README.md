@@ -23,13 +23,15 @@ constrain the synthesis process.
       <img src="./doc/human_prs_acc.png" width="400" />
       <img src="./doc/human_prs_loss.png" width="400" />
 <br>
-<center>
+
+<div style = "text-align:center;">
   <img src="./doc/b1.png" width="102" />
   <img src="./doc/b2.png" width="100" />
   <img src="./doc/b3.png" width="100" />
   <img src="./doc/b4.png" width="100" />
   <img src="./doc/b5.png" width="100" />
-</center>
+</div>
+  
 <br>
 
 ## Installation
