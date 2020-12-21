@@ -21,13 +21,16 @@ constrain the synthesis process.
    * Here is the loss and accuracy achieved by the U-Net with MobileNetV2:
 
       <img src="./doc/human_prs_acc.png" width="400" />
-      <img src="./doc/human_prs_loss.png" width="435" />
-
-        <img src="./doc/b1.png" width="102" />
-        <img src="./doc/b2.png" width="100" />
-        <img src="./doc/b3.png" width="100" />
-        <img src="./doc/b4.png" width="100" />
-        <img src="./doc/b5.png" width="100" />
+      <img src="./doc/human_prs_loss.png" width="400" />
+<br>
+<center>
+  <img src="./doc/b1.png" width="102" />
+  <img src="./doc/b2.png" width="100" />
+  <img src="./doc/b3.png" width="100" />
+  <img src="./doc/b4.png" width="100" />
+  <img src="./doc/b5.png" width="100" />
+</center>
+<br>
 
 ## Installation
 * This repo is in initial state that only contains jupyter notebook version of the code (not the full pipeline library/api). To experiment and execute the code cell in each `notebook.py` file, please install the following:
