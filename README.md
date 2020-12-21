@@ -7,7 +7,7 @@ This repo is the composition of multiple applications that can derive the genera
 # Experiment
 ## Approach
 
-1. According to the [VITON paper](##Reference), the process of producing a try-on image is motivated by a self-supervised learning approach, and the pipeline can be described as below:
+1. According to the [VITON paper](#Reference), the process of producing a try-on image is motivated by a self-supervised learning approach, and the pipeline can be described as below:
    * Firstly, the person images are extracted into a set of image channels called <b>Person Representation</b>. According to the paper, a person representation is clothing-agnostic, which contains a set of features ([see image](#Approach)), including pose, body parts, face and hair, as a prior to
 constrain the synthesis process.
     
