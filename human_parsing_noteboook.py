@@ -385,7 +385,7 @@ model.compile(
 # %%
 
 # Training
-history = model.fit(batchs, steps_per_epoch=20, epochs=20)
+history = model.fit(batchs, steps_per_epoch=20, epochs=50)
 
 
 # %%
@@ -394,8 +394,8 @@ history = model.fit(batchs, steps_per_epoch=20, epochs=20)
 
 r = np.random.randint(0, 5000)
 test_o, test_gt = get_input_and_label(
-    TRAIN_INPUT_PATH / (TRAIN_NAME[r] + INPUT_EXT),
-    TRAIN_PARSING_PATH / (TRAIN_NAME[r] + PARSING_EXT)
+    VAL_INPUT_PATH / (VAL_NAME[r] + INPUT_EXT),
+    VAL_PARSING_PATH / (VAL_NAME[r] + PARSING_EXT)
 )
 print("Original image:")
 show_img(test_o)
@@ -419,12 +419,12 @@ plot_history(history)
 # Save model if you want to
 
 # Include the epoch in the file name (uses `str.format`)
-checkpoint_path = "checkpoints/human_parsing_mbv2-20epochs.ckpt"
+checkpoint_path = "checkpoints/human_parsing_mbv2-50epochs.ckpt"
 checkpoint_dir = os.path.dirname(checkpoint_path)
 
 model.save_weights(checkpoint_path)
 
-model.save('models/human_parsing_mbv2-20epochs')
+model.save('models/human_parsing_mbv2-50epochs')
 
 # %%
 

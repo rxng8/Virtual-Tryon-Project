@@ -31,10 +31,10 @@ DATASET_SRC = DATASET_PATH / "MPV_192_256"
 DATASET_FILE = "all_poseA_poseB_clothes.txt"
 
 BATCH_SIZE = 32
-IMG_SHAPE = (300, 300, 3)
+IMG_SHAPE = (256, 192, 3)
 
 # load human parsing model that has been trained in human_parsing notebook.
-parsing_model = new_model = tf.keras.models.load_model('models/human_parsing_cp-20epochs')
+parsing_model = tf.keras.models.load_model('models/human_parsing_mbv2-50epochs')
 
 # %%
 
