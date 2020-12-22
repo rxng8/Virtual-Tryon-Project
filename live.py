@@ -77,19 +77,30 @@ def parse_human(img):
     prediction = parsing_model.predict(tf.expand_dims(rescaled, axis=0))[0]
     return prediction # 20 channel
 
+def create_mask(pred_mask):
+    # pred_mask shape (256, 192, 20)
+    pred_mask = tf.argmax(pred_mask, axis=-1)
+    pred_mask = pred_mask[..., tf.newaxis]
+    return pred_mask
+
 def draw_simple_parsing(original_img, prediction, threshold: float=0.5):
     # Original image have the shape of the cam, 3 channel (height, width, 3). Scale 0 - 255
     # prediction have the shape of the computing shape, 20 channels (height, width, 20). Scale 0 - 1
     assert original_img.shape[:2] == prediction.shape[:2], "image width and height not matching"
     
-    # Dont take the background channels but take all others channels. Take the last 19 channels.
-    bool_mat = prediction[:, :, 1:] > threshold
+    # sample_body_mask shape (256, 192, 1). Range [0, 19]. Representing classes.
+    sample_mask = create_mask(prediction)
 
-    # Collapse all channel of bool mat to each other with logical or.
-    bool_mat = tf.reduce_any(bool_mat, axis=2)
+    body_masking_channels = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 15, 16, 17, 18, 19]
+    sample_body_mask = [sample_mask == c for c in body_masking_channels]
+    # sample_body_mask shape (len(body_masking_channels), 256, 192, 1). Range [0, 19]. Representing classes.
+    sample_body_mask = tf.reduce_any(sample_body_mask, axis=0)
+    # Now sample_body_mask have shape (256, 192, 1). Range [False, True]
+    sample_body_mask = tf.squeeze(sample_body_mask)
+    # Now sample_body_mask have shape (256, 192). Range [False, True]
 
     # set the value to white
-    original_img[bool_mat, :] = ORANGE_RED
+    original_img[sample_body_mask, :] = ORANGE_RED
 
 def draw_parsing(original_img, prediction, threshold: float=0.5):
     # Original image have the shape of the cam, 3 channel (height, width, 3). Scale 0 - 255
