@@ -104,16 +104,20 @@ PARSING_SINGLE_SHAPE = (256, 192, 1)
 def plot_history(history):
     plt.figure()
     plt.plot(history.history['loss'])
+    plt.plot(history.history['val_loss'])
     plt.title('Model Loss')
     plt.ylabel('Loss')
     plt.xlabel('Epoch')
+    plt.legend(['train', 'val'], loc='upper right')
     plt.show()
 
     plt.figure()
     plt.plot(history.history['acc'])
+    plt.plot(history.history['val_acc'])
     plt.title('Model Accuracy')
     plt.ylabel('Accuracy')
     plt.xlabel('Epoch')
+    plt.legend(['train', 'val'], loc='upper left')
     plt.show()
 
 
@@ -145,6 +149,10 @@ def plot_parsing_map(test_predict):
     fig.tight_layout()
     plt.show()
 
+def create_mask(pred_mask):
+    pred_mask = tf.argmax(pred_mask, axis=-1)
+    pred_mask = pred_mask[..., tf.newaxis]
+    return pred_mask[0]
 
 def load_image(image_path):
     img = tf.io.read_file(image_path)
@@ -493,14 +501,13 @@ cat4_tensor = tf.keras.layers.concatenate([up4_tensor, out4])
 # There are 20 integer category (not one-hot-encoded), so, n channels (or neurons, or feature vectors) is 20
 out = tf.keras.layers.Conv2DTranspose(
     20, 3, strides=2,
-    padding='same',
-    activation='sigmoid'
+    padding='same'
 ) (cat4_tensor)
 
 model = tf.keras.Model(inputs, out)
 model.summary()
 model.compile(
-    loss=tf.keras.losses.SparseCategoricalCrossentropy(),
+    loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
     metrics=['acc']
 )
 
@@ -521,7 +528,14 @@ val_ds = tf.data.Dataset.from_generator(val_gen_multi_parsing, output_signature=
 ))
 val_ds = val_ds.repeat().batch(20)
 
-history = model.fit(train_ds, steps_per_epoch=20, epochs=50, validation_data=val_ds)
+history = model.fit(
+    train_ds, 
+    steps_per_epoch=20, 
+    epochs=50, 
+    validation_data=val_ds,
+    validation_steps=10)
+# %%
+
 
 plot_history(history)
 
@@ -566,6 +580,9 @@ test_predict = model.predict(tf.expand_dims(test_img, axis=0))
 
 plot_parsing_map(test_predict)
 
+pred_mask = create_mask(test_predict)
+show_img(pred_mask)
+
 # %%
 
 # evaluate on lip dataset
@@ -585,7 +602,8 @@ print("Predicted segmentation:")
 # Test predict will now contain 20 channel corressponding to 20 classification labels
 test_predict = model.predict(tf.expand_dims(test_img, axis=0))
 plot_parsing_map(test_predict)
-
+pred_mask = create_mask(test_predict)
+show_img(pred_mask)
 
 # %%
 
