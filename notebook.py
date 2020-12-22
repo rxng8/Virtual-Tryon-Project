@@ -262,7 +262,6 @@ sample_parsing = get_human_parsing(sample_img)
 # sample_body_mask shape (256, 192, 1). Range [0, 19]. Representing classes.
 sample_mask = create_mask(sample_parsing)
 
-# Take everything except for the background, face, and hair
 body_masking_channels = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 15, 16, 17, 18, 19]
 sample_body_mask = [sample_mask == c for c in body_masking_channels]
 # sample_body_mask shape (len(body_masking_channels), 256, 192, 1). Range [0, 19]. Representing classes.
@@ -270,7 +269,6 @@ sample_body_mask = tf.reduce_any(sample_body_mask, axis=0)
 sample_body_mask = tf.cast(sample_body_mask, dtype=tf.float32)
 show_img(sample_body_mask)
 
-# Take everything except for the background, face, and hair
 face_hair_masking_channels = [1, 2, 13]
 sample_face_hair_mask = [sample_mask == c for c in face_hair_masking_channels]
 # sample_face_hair_mask shape (len(face_hair_masking_channels), 256, 192, 1). Range [0, 19]. Representing classes.
@@ -320,14 +318,12 @@ def train_generator():
         # sample_body_mask shape (256, 192, 1). Range [0, 19]. Representing classes.
         sample_mask = create_mask(sample_parsing)
 
-        # Take everything except for the background, face, and hair
         body_masking_channels = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 15, 16, 17, 18, 19]
         sample_body_mask = [sample_mask == c for c in body_masking_channels]
         # sample_body_mask shape (len(body_masking_channels), 256, 192, 1). Range [0, 19]. Representing classes.
         sample_body_mask = tf.reduce_any(sample_body_mask, axis=0)
         sample_body_mask = tf.cast(sample_body_mask, dtype=tf.float32)
 
-        # Take everything except for the background, face, and hair
         face_hair_masking_channels = [1, 2, 13]
         sample_face_hair_mask = [sample_mask == c for c in face_hair_masking_channels]
         # sample_face_hair_mask shape (len(face_hair_masking_channels), 256, 192, 1). Range [0, 19]. Representing classes.
@@ -356,6 +352,7 @@ train_ds = tf.data.Dataset.from_generator(
 )
 train_batch_ds = train_ds.batch(BATCH_SIZE)
 it = iter(train_ds)
+
 # %%
 
 # test dataset
@@ -433,6 +430,7 @@ from tensorflow_examples.models.pix2pix import pix2pix
 mobile_net_model = tf.keras.applications.MobileNetV2(
     input_shape=IMG_SHAPE, 
     include_top=False)
+mobile_net_model.summary()
 mobile_net_model.trainable = False
 # Use the activations of these layers
 layer_names = [
@@ -449,7 +447,7 @@ wrap_mobile_net_model = tf.keras.Model(inputs=mobile_net_model.input, outputs=la
 wrap_mobile_net_model.trainable = False
 
 
-inputs = tf.keras.Input(shape=(*IMG_SHAPE[:2], 7))
+inputs = tf.keras.Input(shape=(*IMG_SHAPE[:2], 10))
 
 pre_conv = tf.keras.layers.Conv2D(3, (3, 3), padding='same')(inputs)
 
@@ -483,27 +481,144 @@ model = tf.keras.Model(inputs, out)
 model.summary()
 
 # %%
+# Deprecated
+class PerceptualVGG16(tf.keras.Model):
+    layers = [
+        'block1_conv2', 
+        'block2_conv2', 
+        'block3_conv2', 
+        'block4_conv2',
+        'block5_conv2'
+    ]
+    def __init__(self):
+        self.vgg16 = tf.keras.applications.VGG16(
+            include_top=False, 
+            weights='imagenet',
+            input_shape=IMG_SHAPE
+        )
+        self.vgg16.trainable = False
+    
+    def __call__(self, x: tf.Tensor):
+        assert x.shape == IMG_SHAPE, "Wrong shape!"
+        return [self.vgg16.get_layer()]
 
-# Definition of losses and train step
+# %%
 
-def loss_function():
-    loss_object = tf.keras.losses.CategoricalCrossentropy()
-    pass
+vgg16 = tf.keras.applications.VGG16(
+    include_top=False, 
+    weights='imagenet',
+    input_shape=IMG_SHAPE
+)
+vgg16.trainable = False
+layer_names = [
+    'block1_conv2', # 256 x 192 x 64
+    'block2_conv2', # 128 x 96 x 128
+    'block3_conv2', # 64 x 48 x 256
+    'block4_conv2', # 32 x 24 x 512
+    'block5_conv2'  # 16 x 12 x 512
+]
+layers = [vgg16.get_layer(name).output for name in layer_names]
 
-optimizer = tf.keras.optimizers.Adam(lr=2e-3)
+# Create the feature extraction model
+wrap_vgg16_model = tf.keras.Model(inputs=vgg16.input, outputs=layers)
+wrap_vgg16_model.trainable = False
+
+def loss_function(real, pred):
+    loss = 0
+    # Read about perceptual loss here:
+    # https://towardsdatascience.com/perceptual-losses-for-real-time-style-transfer-and-super-resolution-637b5d93fa6d
+    # Also, tensorflow losses only compute loss across the last dimension. so we 
+    # have to reduce mean to a constant
+
+    # Perceptual loss eval
+    out_real = wrap_vgg16_model(real[:,:,:,:3], training=False)
+    out_pred = wrap_vgg16_model(pred[:,:,:,:3], training=False)
+
+    # pixel-pise loss, RGB predicted value
+    loss += tf.reduce_mean(tf.keras.losses.MAE(real[:,:,:,:3], pred[:,:,:,:3]))
+
+    # Perceptual loss
+    for real_features, pred_features in zip(out_real, out_pred):
+        loss += tf.reduce_mean(tf.keras.losses.MAE(real_features, pred_features))
+
+    # L1 loss
+    loss += tf.reduce_mean(tf.keras.losses.MAE(real[:,:,:,3:], pred[:,:,:,3:]))
+
+    return loss
+
+optimizer = tf.keras.optimizers.Adam(learning_rate=2e-3)
 
 def train_step(person_reprs, clothings, labels):
     # Use gradient tape
     pass
 
+
+
 # %%
 
 # Training the model
 
-EPOCHS = 1
+EPOCHS = 4
 
-for epoch in EPOCHS:
-    # Train train train
-    pass
+for epoch in range(EPOCHS):
+    print("\nStart of epoch %d" % (epoch + 1,))
 
+    # Iterate over the batches of the dataset.
+    for step, (x_batch_train, y_batch_train) in enumerate(train_batch_ds.take(STEP_PER_EPOCHS)):
+
+        # Open a GradientTape to record the operations run
+        # during the forward pass, which enables auto-differentiation.
+        with tf.GradientTape() as tape:
+
+            # Run the forward pass of the layer.
+            # The operations that the layer applies
+            # to its inputs are going to be recorded
+            # on the GradientTape.
+            logits = model(x_batch_train, training=True)  # Logits for this minibatch
+
+            # Compute the loss value for this minibatch.
+            loss_value = loss_function(y_batch_train, logits)
+            print(f"loss for this batch at step: {step + 1}: {loss_value}")
+
+        # Use the gradient tape to automatically retrieve
+        # the gradients of the trainable variables with respect to the loss.
+        grads = tape.gradient(loss_value, model.trainable_weights)
+
+        # Run one step of gradient descent by updating
+        # the value of the variables to minimize the loss.
+        optimizer.apply_gradients(zip(grads, model.trainable_weights))
+
+        # Log every 200 batches.
+        if step % 200 == 0:
+            print(
+                "Training loss (for one batch) at step %d: %.4f"
+                % (step, float(loss_value))
+            )
+            print("Seen so far: %s samples" % ((step + 1) * 64))
+
+# %%
+
+# eval
+
+sample_input_batch, sample_output_batch = next(iter(train_batch_ds.take(1)))
+
+#%%
+
+# Evaluate
+r = np.random.randint(0, BATCH_SIZE - 1)
+
+print("Input: ")
+show_img(sample_input_batch[r, :, :, 0:3])
+show_img(sample_input_batch[r, :, :, 3])
+show_img(sample_input_batch[r, :, :, 4:7])
+show_img(sample_input_batch[r, :, :, 7:10])
+
+print('label:')
+show_img(sample_output_batch[r, :, :, 0:3])
+show_img(sample_output_batch[r, :, :, 3])
+
+print('pred:')
+pred = model(sample_input_batch)
+show_img(pred[r, :, :, 0:3])
+show_img(pred[r, :, :, 3])
 
