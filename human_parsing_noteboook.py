@@ -132,6 +132,8 @@ def show_img(img):
         plt.show()
 
 def plot_parsing_map(test_predict):
+    # mask is shape (256, 192, 1). Range[0, 19]
+    mask = create_mask(test_predict)
     width=15
     height=10
     rows = 4
@@ -145,7 +147,7 @@ def plot_parsing_map(test_predict):
         subplot_title=(label_name)
         axes[-1].set_title(subplot_title)
         axes[-1].axis('off')
-        plt.imshow(test_predict[0, :, :, label_channel] > 0.5, cmap='gray')
+        plt.imshow(mask == label_channel, cmap='gray')
     fig.tight_layout()
     plt.show()
 
@@ -586,7 +588,9 @@ show_img(pred_mask)
 # %%
 
 # evaluate on lip dataset
-lip_test = "./dataset/lip_mpv_dataset/MPV_192_256/0VB21E007/0VB21E007-T11@8=person_half_front.jpg"
+lip_test2 = "./dataset/lip_mpv_dataset/MPV_192_256/0VB21E007/0VB21E007-T11@8=person_half_front.jpg"
+lip_test3 = "./dataset/lip_mpv_dataset/MPV_192_256/ZX121DA0I/ZX121DA0I-Q11@16=person_half_front.jpg"
+lip_test = "./dataset/lip_mpv_dataset/MPV_192_256/ZX121DA0P/ZX121DA0P-K11@8=person_half_front.jpg"
 test_img = tf.convert_to_tensor(
     np.asarray(
         Image.open(
@@ -621,8 +625,8 @@ model.save('models/human_parsing_mbv2-50epochs')
 # %%
 
 # load models. (If you have saved model)
-new_model = tf.keras.models.load_model('models/human_parsing_cp-20epochs')
+model = tf.keras.models.load_model('models/human_parsing_mbv2-50epochs')
 
 # Check its architecture
-new_model.summary()
+model.summary()
 
