@@ -47,11 +47,12 @@ constrain the synthesis process.
 
 <b>Full input to the VITON Pipeline</b>
 <div style = "text-align:center;">
-  <img src="./doc/inp1.png" width="150" />
-  <img src="./doc/inp2.png" width="150" />
-  <img src="./doc/inp3.png" width="150" />
-  <img src="./doc/inp4.png" width="150" />
-  <img src="./doc/inp5.png" width="150" />
+  <img src="./doc/inp1.png" width="130" />
+  <img src="./doc/inp2.png" width="130" />
+  <img src="./doc/inp3.png" width="130" />
+  <img src="./doc/inp4.png" width="130" />
+  <img src="./doc/inp5.png" width="130" />
+  <img src="./doc/inp6.png" width="130" />
 </div>
 
 <br>
