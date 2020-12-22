@@ -37,13 +37,20 @@ constrain the synthesis process.
 </div>
 
 <br>
-
+<b>For input:</b>
+<br>
+<div style = "text-align:center;">
+  <img src="./doc/human_prs_inp.png" width="200" />
+</div>
 <b>Human body parts parsing</b>
 <div style = "text-align:center;">
   <img src="./doc/human_prs.png" width="900" />
 </div>
-
 <br>
+<b>Human body parts parsing Collapse</b>
+<div style = "text-align:center;">
+  <img src="./doc/human_prs_collapse.png" width="200" />
+</div>
 
 <b>Full input to the VITON Pipeline</b>
 <div style = "text-align:center;">
