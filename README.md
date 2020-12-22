@@ -24,8 +24,10 @@ constrain the synthesis process.
   <img src="./doc/human_prs_acc.png" width="300" />
   <img src="./doc/human_prs_loss.png" width="300" />
 </div>
-      
+
 <br>
+
+<b>Sample pose and binary human parsing. I.e: Pixel is either 1 (human) or 0 (background)</b>
 <div style = "text-align:center;">
   <img src="./doc/b1.png" width="102" />
   <img src="./doc/b2.png" width="100" />
@@ -34,10 +36,24 @@ constrain the synthesis process.
   <img src="./doc/b5.png" width="100" />
 </div>
 
+<br>
+
+<b>Human body parts parsing</b>
 <div style = "text-align:center;">
   <img src="./doc/human_prs.png" width="900" />
 </div>
-  
+
+<br>
+
+<b>Full input to the VITON Pipeline</b>
+<div style = "text-align:center;">
+  <img src="./doc/inp1.png" width="150" />
+  <img src="./doc/inp2.png" width="150" />
+  <img src="./doc/inp3.png" width="150" />
+  <img src="./doc/inp4.png" width="150" />
+  <img src="./doc/inp5.png" width="150" />
+</div>
+
 <br>
 
 ## Installation
