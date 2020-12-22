@@ -214,11 +214,17 @@ def get_human_parsing(img):
     prediction = parsing_model.predict(tf.expand_dims(img, axis=0))[0]
     return prediction
 
+def create_mask(pred_mask):
+    # pred_mask shape 3d, not 4d
+    pred_mask = tf.argmax(pred_mask, axis=-1)
+    pred_mask = pred_mask[..., tf.newaxis]
+    return pred_mask
+
 def show_img(img):
     plt.figure()
     plt.imshow(img)
     plt.axis('off')
-    plt.show()    
+    plt.show()
 
 # %%
 
@@ -253,54 +259,34 @@ show_img(sample_pose)
 
 # sample_pose shape (256, 192, 20). Range [0, 1]
 sample_parsing = get_human_parsing(sample_img)
+# sample_body_mask shape (256, 192, 1). Range [0, 19]. Representing classes.
+sample_mask = create_mask(sample_parsing)
 
-# sample_body_mask shape (256, 192, 16). Range [0, 1]
 # Take everything except for the background, face, and hair
-sample_body_mask = tf.concat(
-    [
-        sample_parsing[:,:,3:13], 
-        sample_parsing[:,:,14:20]
-    ],
-    axis=2
-)
-# TODO: Determine if the mask is deterministic? I.e: pixel value is binary or float?
-# sample_body_mask[sample_body_mask < MASK_THRESHOLD] = 0
-# sample_body_mask after all will have the shape (256, 192, 1). Range [0, 1]
-sample_body_mask = sample_body_mask.numpy() >= MASK_THRESHOLD
-sample_body_mask = tf.reduce_any(sample_body_mask, axis=2)
+body_masking_channels = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 15, 16, 17, 18, 19]
+sample_body_mask = [sample_mask == c for c in body_masking_channels]
+# sample_body_mask shape (len(body_masking_channels), 256, 192, 1). Range [0, 19]. Representing classes.
+sample_body_mask = tf.reduce_any(sample_body_mask, axis=0)
 sample_body_mask = tf.cast(sample_body_mask, dtype=tf.float32)
-sample_body_mask = tf.expand_dims(sample_body_mask, axis=2)
 show_img(sample_body_mask)
 
-# sample_face_hair_mask after all will have the shape (256, 192, 1). Range [0, 1]
-sample_face_hair_mask = tf.concat(
-    [
-        sample_parsing[:,:,1:3],
-        sample_parsing[:,:,13:14]
-    ],
-    axis=2
-)
-sample_face_hair_mask = sample_face_hair_mask.numpy() >= MASK_THRESHOLD
-sample_face_hair_mask = tf.reduce_any(sample_face_hair_mask, axis=2)
+# Take everything except for the background, face, and hair
+face_hair_masking_channels = [1, 2, 13]
+sample_face_hair_mask = [sample_mask == c for c in face_hair_masking_channels]
+# sample_face_hair_mask shape (len(face_hair_masking_channels), 256, 192, 1). Range [0, 19]. Representing classes.
+sample_face_hair_mask = tf.reduce_any(sample_face_hair_mask, axis=0)
 sample_face_hair_mask = tf.cast(sample_face_hair_mask, dtype=tf.float32)
-sample_face_hair_mask = tf.expand_dims(sample_face_hair_mask, axis=2)
+# show_img(sample_face_hair_mask)
+
 sample_face_hair = sample_img * sample_face_hair_mask
 show_img(sample_face_hair)
 
-# sample_clothing_mask after all will have the shape (256, 192, 1). Range [0, 1]
-sample_clothing_mask = tf.concat(
-    [
-        sample_parsing[:,:,5:8], 
-        sample_parsing[:,:,12:13]
-    ],
-    axis=2
-)
-
-# sample_clothing_mask after all will have the shape (256, 192, 1). Range [0, 1]
-sample_clothing_mask = sample_clothing_mask.numpy() >= MASK_THRESHOLD
-sample_clothing_mask = tf.reduce_any(sample_clothing_mask, axis=2)
+# Take everything except for the background, face, and hair
+clothing_masking_channels = [5, 6, 7, 12]
+sample_clothing_mask = [sample_mask == c for c in clothing_masking_channels]
+# sample_clothing_mask shape (len(face_hair_masking_channels), 256, 192, 1). Range [0, 19]. Representing classes.
+sample_clothing_mask = tf.reduce_any(sample_clothing_mask, axis=0)
 sample_clothing_mask = tf.cast(sample_clothing_mask, dtype=tf.float32)
-sample_clothing_mask = tf.expand_dims(sample_clothing_mask, axis=2)
 show_img(sample_clothing_mask)
 
 # %%
@@ -331,59 +317,40 @@ def train_generator():
 
         # sample_pose shape (256, 192, 20). Range [0, 1]
         sample_parsing = get_human_parsing(sample_img)
+        # sample_body_mask shape (256, 192, 1). Range [0, 19]. Representing classes.
+        sample_mask = create_mask(sample_parsing)
 
-        # sample_body_mask shape (256, 192, 16). Range [0, 1]
         # Take everything except for the background, face, and hair
-        sample_body_mask = tf.concat(
-            [
-                sample_parsing[:,:,3:13], 
-                sample_parsing[:,:,14:20]
-            ],
-            axis=2
-        )
-
-        # sample_body_mask after all will have the shape (256, 192, 1). Range [0, 1]
-        sample_body_mask = sample_body_mask.numpy() >= MASK_THRESHOLD
-        sample_body_mask = tf.reduce_any(sample_body_mask, axis=2)
+        body_masking_channels = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 15, 16, 17, 18, 19]
+        sample_body_mask = [sample_mask == c for c in body_masking_channels]
+        # sample_body_mask shape (len(body_masking_channels), 256, 192, 1). Range [0, 19]. Representing classes.
+        sample_body_mask = tf.reduce_any(sample_body_mask, axis=0)
         sample_body_mask = tf.cast(sample_body_mask, dtype=tf.float32)
-        sample_body_mask = tf.expand_dims(sample_body_mask, axis=2)
 
-        # sample_face_hair_mask after all will have the shape (256, 192, 1). Range [0, 1]
-        sample_face_hair_mask = tf.concat(
-            [
-                sample_parsing[:,:,1:3],
-                sample_parsing[:,:,13:14]
-            ],
-            axis=2
-        )
-        sample_face_hair_mask = sample_face_hair_mask.numpy() >= MASK_THRESHOLD
-        sample_face_hair_mask = tf.reduce_any(sample_face_hair_mask, axis=2)
+        # Take everything except for the background, face, and hair
+        face_hair_masking_channels = [1, 2, 13]
+        sample_face_hair_mask = [sample_mask == c for c in face_hair_masking_channels]
+        # sample_face_hair_mask shape (len(face_hair_masking_channels), 256, 192, 1). Range [0, 19]. Representing classes.
+        sample_face_hair_mask = tf.reduce_any(sample_face_hair_mask, axis=0)
         sample_face_hair_mask = tf.cast(sample_face_hair_mask, dtype=tf.float32)
-        sample_face_hair_mask = tf.expand_dims(sample_face_hair_mask, axis=2)
+        # show_img(sample_face_hair_mask)
+
         sample_face_hair = sample_img * sample_face_hair_mask
 
-        # sample_clothing_mask after all will have the shape (256, 192, 1). Range [0, 1]
-        sample_clothing_mask = tf.concat(
-            [
-                sample_parsing[:,:,5:8], 
-                sample_parsing[:,:,12:13]
-            ],
-            axis=2
-        )
-
-        # sample_clothing_mask after all will have the shape (256, 192, 1). Range [0, 1]
-        sample_clothing_mask = sample_clothing_mask.numpy() >= MASK_THRESHOLD
-        sample_clothing_mask = tf.reduce_any(sample_clothing_mask, axis=2)
+        # Take everything except for the background, face, and hair
+        clothing_masking_channels = [5, 6, 7, 12]
+        sample_clothing_mask = [sample_mask == c for c in clothing_masking_channels]
+        # sample_clothing_mask shape (len(face_hair_masking_channels), 256, 192, 1). Range [0, 19]. Representing classes.
+        sample_clothing_mask = tf.reduce_any(sample_clothing_mask, axis=0)
         sample_clothing_mask = tf.cast(sample_clothing_mask, dtype=tf.float32)
-        sample_clothing_mask = tf.expand_dims(sample_clothing_mask, axis=2)
         
-        yield tf.concat([sample_pose, sample_body_mask, sample_face_hair], axis=2), \
+        yield tf.concat([sample_pose, sample_body_mask, sample_face_hair, sample_cloth], axis=2), \
             tf.concat([sample_img, sample_clothing_mask], axis=2)
 
 train_ds = tf.data.Dataset.from_generator(
     train_generator,
     output_signature=(
-        tf.TensorSpec(shape=(*IMG_SHAPE[:2], 7), dtype=tf.float32),
+        tf.TensorSpec(shape=(*IMG_SHAPE[:2], 10), dtype=tf.float32),
         tf.TensorSpec(shape=(*IMG_SHAPE[:2], 4), dtype=tf.float32)
     )
 )
@@ -482,8 +449,11 @@ wrap_mobile_net_model = tf.keras.Model(inputs=mobile_net_model.input, outputs=la
 wrap_mobile_net_model.trainable = False
 
 
-inputs = tf.keras.Input(shape=IMG_SHAPE)
-out4, out3, out2, out1, out0 = wrap_mobile_net_model(inputs, training=False)
+inputs = tf.keras.Input(shape=(*IMG_SHAPE[:2], 7))
+
+pre_conv = tf.keras.layers.Conv2D(3, (3, 3), padding='same')(inputs)
+
+out4, out3, out2, out1, out0 = wrap_mobile_net_model(pre_conv, training=False)
 
 up1_tensor = pix2pix.upsample(512, 3)(out0)
 
