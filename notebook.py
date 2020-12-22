@@ -217,6 +217,7 @@ def get_human_parsing(img):
 def show_img(img):
     plt.figure()
     plt.imshow(img)
+    plt.axis('off')
     plt.show()    
 
 # %%
