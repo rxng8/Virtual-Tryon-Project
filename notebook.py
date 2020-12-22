@@ -31,14 +31,13 @@ DATASET_SRC = DATASET_PATH / "MPV_192_256"
 DATASET_FILE = "all_poseA_poseB_clothes.txt"
 
 BATCH_SIZE = 32
+STEP_PER_EPOCHS = 20
 IMG_SHAPE = (256, 192, 3)
+
+MASK_THRESHOLD = 0.9
 
 # load human parsing model that has been trained in human_parsing notebook.
 parsing_model = tf.keras.models.load_model('models/human_parsing_mbv2-50epochs')
-
-# %%
-
-# Some definition
 
 def get_data_path_raw():
     train_half_front = []
@@ -114,6 +113,38 @@ def get_data_path():
 
     return np.asarray(train_half_front), np.asarray(test_half_front)
 
+TRAIN_PATH, TEST_PATH = get_data_path()
+
+LABEL_NAME = {
+    'Background': 0,
+    'Hat': 1,
+    'Hair': 2,
+    'Glove': 3,
+    'Sunglasses': 4,
+    'UpperClothes': 5,
+    'Dress': 6,
+    'Coat': 7,
+    'Socks': 8,
+    'Pants': 9,
+    'Jumpsuits': 10,
+    'Scarf': 11,
+    'Skirt': 12,
+    'Face': 13,
+    'Left-arm': 14,
+    'Right-arm': 15,
+    'Left-leg': 16,
+    'Right-leg': 17,
+    'Left-shoe': 18,
+    'Right-shoe': 19
+}
+
+
+# %%
+
+# Some definition
+
+
+
 def get_pose_map_generator(path_list: np.ndarray) -> None:
     """ given a path, return a pose map
 
@@ -181,14 +212,7 @@ def get_pose_map(path) -> np.ndarray:
 def get_human_parsing(img):
     assert img.shape == IMG_SHAPE, "Wrong image shape"
     prediction = parsing_model.predict(tf.expand_dims(img, axis=0))[0]
-    # show_img(prediction)
-    prediction = prediction > 0.5
     return prediction
-
-def train_generator():
-    for (idx, [img_path, cloth_path]) in enumerate(train_path):
-        img = np.asarray(Image.open(DATASET_SRC / img_path))
-        # TODO: Have not done !
 
 def show_img(img):
     plt.figure()
@@ -199,25 +223,179 @@ def show_img(img):
 
 # Sample data
 
-train_path, test_path = get_data_path()
-r = np.random.randint(0, train_path.shape[0] - 1)
+r = np.random.randint(0, TRAIN_PATH.shape[0] - 1)
+
+# sample_img shape (256, 192, 3). Range [0, 1]
+sample_cloth = tf.image.resize(
+    np.asarray(
+        Image.open(
+            TRAIN_PATH[r, 1]
+        )
+    ), IMG_SHAPE[:2]
+) / 255.0
+show_img(sample_cloth)
+
+# sample_img shape (256, 192, 3). Range [0, 1]
 sample_img = tf.image.resize(
     np.asarray(
         Image.open(
-            train_path[r, 0]
+            TRAIN_PATH[r, 0]
         )
     ), IMG_SHAPE[:2]
 ) / 255.0
 
-# gen = get_pose_map_generator(train_path[:,0])
-sample_pose = get_pose_map(train_path[r, 0])
+show_img(sample_img)
+
+# sample_pose shape (256, 192, 3). Range [0, 1]
+sample_pose = get_pose_map(TRAIN_PATH[r, 0])
+show_img(sample_pose)
+
+# sample_pose shape (256, 192, 20). Range [0, 1]
 sample_parsing = get_human_parsing(sample_img)
 
-# img = np.asarray(next(gen))
-print("Img shape: {}".format(sample_img.shape))
-show_img(sample_img)
-show_img(sample_pose)
-show_img(sample_parsing)
+# sample_body_mask shape (256, 192, 16). Range [0, 1]
+# Take everything except for the background, face, and hair
+sample_body_mask = tf.concat(
+    [
+        sample_parsing[:,:,3:13], 
+        sample_parsing[:,:,14:20]
+    ],
+    axis=2
+)
+# TODO: Determine if the mask is deterministic? I.e: pixel value is binary or float?
+# sample_body_mask[sample_body_mask < MASK_THRESHOLD] = 0
+# sample_body_mask after all will have the shape (256, 192, 1). Range [0, 1]
+sample_body_mask = sample_body_mask.numpy() >= MASK_THRESHOLD
+sample_body_mask = tf.reduce_any(sample_body_mask, axis=2)
+sample_body_mask = tf.cast(sample_body_mask, dtype=tf.float32)
+sample_body_mask = tf.expand_dims(sample_body_mask, axis=2)
+show_img(sample_body_mask)
+
+# sample_face_hair_mask after all will have the shape (256, 192, 1). Range [0, 1]
+sample_face_hair_mask = tf.concat(
+    [
+        sample_parsing[:,:,1:3],
+        sample_parsing[:,:,13:14]
+    ],
+    axis=2
+)
+sample_face_hair_mask = sample_face_hair_mask.numpy() >= MASK_THRESHOLD
+sample_face_hair_mask = tf.reduce_any(sample_face_hair_mask, axis=2)
+sample_face_hair_mask = tf.cast(sample_face_hair_mask, dtype=tf.float32)
+sample_face_hair_mask = tf.expand_dims(sample_face_hair_mask, axis=2)
+sample_face_hair = sample_img * sample_face_hair_mask
+show_img(sample_face_hair)
+
+# sample_clothing_mask after all will have the shape (256, 192, 1). Range [0, 1]
+sample_clothing_mask = tf.concat(
+    [
+        sample_parsing[:,:,5:8], 
+        sample_parsing[:,:,12:13]
+    ],
+    axis=2
+)
+
+# sample_clothing_mask after all will have the shape (256, 192, 1). Range [0, 1]
+sample_clothing_mask = sample_clothing_mask.numpy() >= MASK_THRESHOLD
+sample_clothing_mask = tf.reduce_any(sample_clothing_mask, axis=2)
+sample_clothing_mask = tf.cast(sample_clothing_mask, dtype=tf.float32)
+sample_clothing_mask = tf.expand_dims(sample_clothing_mask, axis=2)
+show_img(sample_clothing_mask)
+
+# %%
+
+# After sampling data, we now can build the dataset
+
+def train_generator():
+    for (idx, [img_path, cloth_path]) in enumerate(TRAIN_PATH):
+        sample_cloth = tf.image.resize(
+            np.asarray(
+                Image.open(
+                    cloth_path
+                )
+            ), IMG_SHAPE[:2]
+        ) / 255.0
+
+        # sample_img shape (256, 192, 3). Range [0, 1]
+        sample_img = tf.image.resize(
+            np.asarray(
+                Image.open(
+                    img_path
+                )
+            ), IMG_SHAPE[:2]
+        ) / 255.0
+
+        # sample_pose shape (256, 192, 3). Range [0, 1]
+        sample_pose = get_pose_map(img_path)
+
+        # sample_pose shape (256, 192, 20). Range [0, 1]
+        sample_parsing = get_human_parsing(sample_img)
+
+        # sample_body_mask shape (256, 192, 16). Range [0, 1]
+        # Take everything except for the background, face, and hair
+        sample_body_mask = tf.concat(
+            [
+                sample_parsing[:,:,3:13], 
+                sample_parsing[:,:,14:20]
+            ],
+            axis=2
+        )
+
+        # sample_body_mask after all will have the shape (256, 192, 1). Range [0, 1]
+        sample_body_mask = sample_body_mask.numpy() >= MASK_THRESHOLD
+        sample_body_mask = tf.reduce_any(sample_body_mask, axis=2)
+        sample_body_mask = tf.cast(sample_body_mask, dtype=tf.float32)
+        sample_body_mask = tf.expand_dims(sample_body_mask, axis=2)
+
+        # sample_face_hair_mask after all will have the shape (256, 192, 1). Range [0, 1]
+        sample_face_hair_mask = tf.concat(
+            [
+                sample_parsing[:,:,1:3],
+                sample_parsing[:,:,13:14]
+            ],
+            axis=2
+        )
+        sample_face_hair_mask = sample_face_hair_mask.numpy() >= MASK_THRESHOLD
+        sample_face_hair_mask = tf.reduce_any(sample_face_hair_mask, axis=2)
+        sample_face_hair_mask = tf.cast(sample_face_hair_mask, dtype=tf.float32)
+        sample_face_hair_mask = tf.expand_dims(sample_face_hair_mask, axis=2)
+        sample_face_hair = sample_img * sample_face_hair_mask
+
+        # sample_clothing_mask after all will have the shape (256, 192, 1). Range [0, 1]
+        sample_clothing_mask = tf.concat(
+            [
+                sample_parsing[:,:,5:8], 
+                sample_parsing[:,:,12:13]
+            ],
+            axis=2
+        )
+
+        # sample_clothing_mask after all will have the shape (256, 192, 1). Range [0, 1]
+        sample_clothing_mask = sample_clothing_mask.numpy() >= MASK_THRESHOLD
+        sample_clothing_mask = tf.reduce_any(sample_clothing_mask, axis=2)
+        sample_clothing_mask = tf.cast(sample_clothing_mask, dtype=tf.float32)
+        sample_clothing_mask = tf.expand_dims(sample_clothing_mask, axis=2)
+        
+        yield tf.concat([sample_pose, sample_body_mask, sample_face_hair], axis=2), \
+            tf.concat([sample_img, sample_clothing_mask], axis=2)
+
+train_ds = tf.data.Dataset.from_generator(
+    train_generator,
+    output_signature=(
+        tf.TensorSpec(shape=(*IMG_SHAPE[:2], 7), dtype=tf.float32),
+        tf.TensorSpec(shape=(*IMG_SHAPE[:2], 4), dtype=tf.float32)
+    )
+)
+train_batch_ds = train_ds.batch(BATCH_SIZE)
+it = iter(train_ds)
+# %%
+
+# test dataset
+sample_input, sample_output = next(it)
+print(sample_input.shape)
+print(sample_output.shape)
+
+# %%
 
 
 
