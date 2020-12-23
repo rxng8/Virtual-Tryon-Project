@@ -19,6 +19,27 @@ import mediapipe as mp
 
 
 # config
+
+# GPU config first
+print("Num GPUs Available: ", len(tf.config.experimental.list_physical_devices('GPU')))
+
+gpus = tf.config.experimental.list_physical_devices('GPU')
+if gpus:
+    # Restrict TensorFlow to only use the first GPU
+    try:
+        tf.config.experimental.set_visible_devices(gpus[0], 'GPU')
+        # Set auto scale memory
+        tf.config.experimental.set_memory_growth(gpus[0], True)
+        # Un comment this to manually set memory limit
+        # tf.config.experimental.set_virtual_device_configuration(
+        #     gpus[0],
+        #     [tf.config.experimental.VirtualDeviceConfiguration(memory_limit=1024)])
+        logical_gpus = tf.config.experimental.list_logical_devices('GPU')
+        print(len(gpus), "Physical GPUs,", len(logical_gpus), "Logical GPU")
+    except RuntimeError as e:
+        # Visible devices must be set before GPUs have been initialized
+        print(e)
+
 # Please config the path as accurate as possible
 
 # this is the path to the root of the dataset
@@ -30,7 +51,7 @@ DATASET_SRC = DATASET_PATH / "MPV_192_256"
 # This is the name of the file where it contains path to data
 DATASET_FILE = "all_poseA_poseB_clothes.txt"
 
-BATCH_SIZE = 32
+BATCH_SIZE = 16
 STEP_PER_EPOCHS = 20
 IMG_SHAPE = (256, 192, 3)
 
@@ -138,12 +159,9 @@ LABEL_NAME = {
     'Right-shoe': 19
 }
 
-
 # %%
 
 # Some definition
-
-
 
 def get_pose_map_generator(path_list: np.ndarray) -> None:
     """ given a path, return a pose map
@@ -221,71 +239,77 @@ def create_mask(pred_mask):
     return pred_mask
 
 def show_img(img):
-    plt.figure()
-    plt.imshow(img)
-    plt.axis('off')
-    plt.show()
+    if len(img.shape) == 3:
+        plt.figure()
+        plt.imshow(img)
+        plt.axis('off')
+        plt.show()
+    elif len(img.shape) == 2:
+        plt.figure()
+        plt.imshow(img, cmap='gray')
+        plt.axis('off')
+        plt.show()
 
 # %%
 
 # Sample data
+with tf.device('/device:GPU:0'):
+    r = np.random.randint(0, TRAIN_PATH.shape[0] - 1)
 
-r = np.random.randint(0, TRAIN_PATH.shape[0] - 1)
+    # sample_img shape (256, 192, 3). Range [0, 1]
+    sample_cloth = tf.image.resize(
+        np.asarray(
+            Image.open(
+                TRAIN_PATH[r, 1]
+            )
+        ), IMG_SHAPE[:2]
+    ) / 255.0
+    show_img(sample_cloth)
 
-# sample_img shape (256, 192, 3). Range [0, 1]
-sample_cloth = tf.image.resize(
-    np.asarray(
-        Image.open(
-            TRAIN_PATH[r, 1]
-        )
-    ), IMG_SHAPE[:2]
-) / 255.0
-show_img(sample_cloth)
+    # sample_img shape (256, 192, 3). Range [0, 1]
+    sample_img = tf.image.resize(
+        np.asarray(
+            Image.open(
+                TRAIN_PATH[r, 0]
+            )
+        ), IMG_SHAPE[:2]
+    ) / 255.0
 
-# sample_img shape (256, 192, 3). Range [0, 1]
-sample_img = tf.image.resize(
-    np.asarray(
-        Image.open(
-            TRAIN_PATH[r, 0]
-        )
-    ), IMG_SHAPE[:2]
-) / 255.0
+    show_img(sample_img)
 
-show_img(sample_img)
+    # sample_pose shape (256, 192, 3). Range [0, 1]
+    sample_pose = get_pose_map(TRAIN_PATH[r, 0])
+    show_img(sample_pose)
 
-# sample_pose shape (256, 192, 3). Range [0, 1]
-sample_pose = get_pose_map(TRAIN_PATH[r, 0])
-show_img(sample_pose)
+    # sample_pose shape (256, 192, 20). Range [0, 1]
+    sample_parsing = get_human_parsing(sample_img)
+    # sample_body_mask shape (256, 192, 1). Range [0, 19]. Representing classes.
+    sample_mask = create_mask(sample_parsing)
 
-# sample_pose shape (256, 192, 20). Range [0, 1]
-sample_parsing = get_human_parsing(sample_img)
-# sample_body_mask shape (256, 192, 1). Range [0, 19]. Representing classes.
-sample_mask = create_mask(sample_parsing)
+    body_masking_channels = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 15, 16, 17, 18, 19]
+    sample_body_mask = [sample_mask == c for c in body_masking_channels]
+    # sample_body_mask shape (len(body_masking_channels), 256, 192, 1). Range [0, 19]. Representing classes.
+    sample_body_mask = tf.reduce_any(sample_body_mask, axis=0)
+    sample_body_mask = tf.cast(sample_body_mask, dtype=tf.float32)
+    show_img(sample_body_mask)
 
-body_masking_channels = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 15, 16, 17, 18, 19]
-sample_body_mask = [sample_mask == c for c in body_masking_channels]
-# sample_body_mask shape (len(body_masking_channels), 256, 192, 1). Range [0, 19]. Representing classes.
-sample_body_mask = tf.reduce_any(sample_body_mask, axis=0)
-sample_body_mask = tf.cast(sample_body_mask, dtype=tf.float32)
-show_img(sample_body_mask)
+    face_hair_masking_channels = [1, 2, 13]
+    sample_face_hair_mask = [sample_mask == c for c in face_hair_masking_channels]
+    # sample_face_hair_mask shape (len(face_hair_masking_channels), 256, 192, 1). Range [0, 19]. Representing classes.
+    sample_face_hair_mask = tf.reduce_any(sample_face_hair_mask, axis=0)
+    sample_face_hair_mask = tf.cast(sample_face_hair_mask, dtype=tf.float32)
+    # show_img(sample_face_hair_mask)
 
-face_hair_masking_channels = [1, 2, 13]
-sample_face_hair_mask = [sample_mask == c for c in face_hair_masking_channels]
-# sample_face_hair_mask shape (len(face_hair_masking_channels), 256, 192, 1). Range [0, 19]. Representing classes.
-sample_face_hair_mask = tf.reduce_any(sample_face_hair_mask, axis=0)
-sample_face_hair_mask = tf.cast(sample_face_hair_mask, dtype=tf.float32)
-# show_img(sample_face_hair_mask)
+    sample_face_hair = sample_img * sample_face_hair_mask
+    show_img(sample_face_hair)
 
-sample_face_hair = sample_img * sample_face_hair_mask
-show_img(sample_face_hair)
-
-# Take everything except for the background, face, and hair
-clothing_masking_channels = [5, 6, 7, 12]
-sample_clothing_mask = [sample_mask == c for c in clothing_masking_channels]
-# sample_clothing_mask shape (len(face_hair_masking_channels), 256, 192, 1). Range [0, 19]. Representing classes.
-sample_clothing_mask = tf.reduce_any(sample_clothing_mask, axis=0)
-sample_clothing_mask = tf.cast(sample_clothing_mask, dtype=tf.float32)
-show_img(sample_clothing_mask)
+    # Take everything except for the background, face, and hair
+    clothing_masking_channels = [5, 6, 7, 12]
+    sample_clothing_mask = [sample_mask == c for c in clothing_masking_channels]
+    # sample_clothing_mask shape (len(face_hair_masking_channels), 256, 192, 1). Range [0, 19]. Representing classes.
+    sample_clothing_mask = tf.reduce_any(sample_clothing_mask, axis=0)
+    sample_clothing_mask = tf.cast(sample_clothing_mask, dtype=tf.float32)
+    show_img(sample_clothing_mask)
 
 # %%
 
@@ -470,10 +494,11 @@ cat4_tensor = tf.keras.layers.concatenate([up4_tensor, out4])
 #       - course human image
 #       - clothing mask on the person
 
+# We don't use activation because we have to calculate mse, or we can use relu act
 out = tf.keras.layers.Conv2DTranspose(
     4, 3, strides=2,
     padding='same',
-    activation='sigmoid'
+    activation='relu'
 ) (cat4_tensor)
 
 # We will not use model, we will just use it to see the summary!
@@ -489,7 +514,7 @@ model.summary()
 # so that we can just predict according to parsing 1 or 0 using binary crossentropy loss.
 # Please use the simple parsing dataset for this model.
 
-inputs = tf.keras.layers.Input(shape=IMG_SHAPE)
+inputs = tf.keras.layers.Input(shape=(*IMG_SHAPE[:2], 10))
 x = tf.keras.layers.Conv2D(
     filters=40, 
     kernel_size=(3, 3), 
@@ -532,9 +557,9 @@ x = tf.keras.layers.UpSampling2D(
 ) (x)
 
 outputs = tf.keras.layers.Conv2D(
-    filters=1, 
+    filters=4, 
     kernel_size=(3, 3), 
-    activation='softmax',
+    activation='relu',
     padding='same') (x)
 
 
@@ -587,7 +612,6 @@ wrap_vgg16_model = tf.keras.Model(inputs=vgg16.input, outputs=layers)
 wrap_vgg16_model.trainable = False
 
 def loss_function(real, pred):
-    loss = 0
     # Read about perceptual loss here:
     # https://towardsdatascience.com/perceptual-losses-for-real-time-style-transfer-and-super-resolution-637b5d93fa6d
     # Also, tensorflow losses only compute loss across the last dimension. so we 
@@ -598,7 +622,7 @@ def loss_function(real, pred):
     out_pred = wrap_vgg16_model(pred[:,:,:,:3], training=False)
 
     # pixel-pise loss, RGB predicted value
-    loss += tf.reduce_mean(tf.math.abs(real[:,:,:,:3] - pred[:,:,:,:3]))
+    pixel_loss = tf.reduce_mean(tf.math.abs(real[:,:,:,:3] - pred[:,:,:,:3]))
 
     perceptual_loss = 0
     # Perceptual loss
@@ -606,12 +630,10 @@ def loss_function(real, pred):
         perceptual_loss += tf.reduce_mean(tf.math.abs(real_features - pred_features))
     # perceptual_loss /= len(out_real)
 
-    loss += perceptual_loss
-
     # L1 loss
-    loss += tf.reduce_mean(tf.math.abs(real[:,:,:,3:] - pred[:,:,:,3:]))
+    mask_loss = tf.reduce_mean(tf.math.abs(real[:,:,:,3:] - pred[:,:,:,3:]))
 
-    return loss
+    return pixel_loss + perceptual_loss + mask_loss
 
 optimizer = tf.keras.optimizers.Adam(learning_rate=2e-3)
 
@@ -641,19 +663,21 @@ for epoch in range(EPOCHS):
             # The operations that the layer applies
             # to its inputs are going to be recorded
             # on the GradientTape.
+            
             logits = model(x_batch_train, training=True)  # Logits for this minibatch
 
             # Compute the loss value for this minibatch.
             loss_value = loss_function(y_batch_train, logits)
             print(f"loss for this batch at step: {step + 1}: {loss_value}")
-
+            gc.collect()
+            torch.cuda.empty_cache()
         # Use the gradient tape to automatically retrieve
         # the gradients of the trainable variables with respect to the loss.
-        grads = tape.gradient(loss_value, model.trainable_weights)
+        # grads = tape.gradient(loss_value, model.trainable_weights)
 
         # Run one step of gradient descent by updating
         # the value of the variables to minimize the loss.
-        optimizer.apply_gradients(zip(grads, model.trainable_weights))
+        # optimizer.apply_gradients(zip(grads, model.trainable_weights))
 
         # Log every 200 batches.
         # if step % 200 == 0:
@@ -692,6 +716,10 @@ print('pred:')
 pred = model(sample_input_batch)
 show_img(pred[r, :, :, 0:3])
 show_img(pred[r, :, :, 3])
+
+# %%
+
+
 
 
 # %%
