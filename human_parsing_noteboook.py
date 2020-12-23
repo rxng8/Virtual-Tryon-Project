@@ -15,9 +15,22 @@ from tensorflow.keras.preprocessing import image_dataset_from_directory
 import cv2
 
 print("Num GPUs Available: ", len(tf.config.experimental.list_physical_devices('GPU')))
-# gpus = tf.config.experimental.list_physical_devices(device_type="GPU")
-# tf.config.experimental.set_visible_devices(devices=gpus[0], device_type="GPU")
-# tf.config.experimental.set_memory_growth(device=gpus[0], enable=True)
+gpus = tf.config.experimental.list_physical_devices('GPU')
+if gpus:
+    # Restrict TensorFlow to only use the first GPU
+    try:
+        tf.config.experimental.set_visible_devices(gpus[0], 'GPU')
+        # Set auto scale memory
+        tf.config.experimental.set_memory_growth(gpus[0], True)
+        # Un comment this to manually set memory limit
+        # tf.config.experimental.set_virtual_device_configuration(
+        #     gpus[0],
+        #     [tf.config.experimental.VirtualDeviceConfiguration(memory_limit=1024)])
+        logical_gpus = tf.config.experimental.list_logical_devices('GPU')
+        print(len(gpus), "Physical GPUs,", len(logical_gpus), "Logical GPU")
+    except RuntimeError as e:
+        # Visible devices must be set before GPUs have been initialized
+        print(e)
 
 # Please configure the path to the dataset as accurate as possible!
 
@@ -125,15 +138,18 @@ def show_img(img):
     if len(img.shape) == 3:
         plt.figure()
         plt.imshow(img)
+        plt.axis('off')
         plt.show()
     elif len(img.shape) == 2:
         plt.figure()
         plt.imshow(img, cmap='gray')
+        plt.axis('off')
         plt.show()
 
 def plot_parsing_map(test_predict):
+    # Test pred shape 4d
     # mask is shape (256, 192, 1). Range[0, 19]
-    mask = create_mask(test_predict)
+    mask = create_mask(test_predict)[0]
     width=15
     height=10
     rows = 4
@@ -154,7 +170,7 @@ def plot_parsing_map(test_predict):
 def create_mask(pred_mask):
     pred_mask = tf.argmax(pred_mask, axis=-1)
     pred_mask = pred_mask[..., tf.newaxis]
-    return pred_mask[0]
+    return pred_mask
 
 def load_image(image_path):
     img = tf.io.read_file(image_path)
@@ -582,7 +598,7 @@ test_predict = model.predict(tf.expand_dims(test_img, axis=0))
 
 plot_parsing_map(test_predict)
 
-pred_mask = create_mask(test_predict)
+pred_mask = create_mask(test_predict)[0]
 show_img(pred_mask)
 
 # %%
@@ -606,7 +622,7 @@ print("Predicted segmentation:")
 # Test predict will now contain 20 channel corressponding to 20 classification labels
 test_predict = model.predict(tf.expand_dims(test_img, axis=0))
 plot_parsing_map(test_predict)
-pred_mask = create_mask(test_predict)
+pred_mask = create_mask(test_predict)[0]
 show_img(pred_mask)
 
 # %%
@@ -630,3 +646,283 @@ model = tf.keras.models.load_model('models/human_parsing_mbv2-50epochs')
 # Check its architecture
 model.summary()
 
+# %%
+
+# Perform export prediction images
+
+import mediapipe as mp
+
+# this is the path to the root of the dataset
+LIP_DATASET_PATH = Path("./dataset/lip_mpv_dataset/")
+
+# This is the path to the folder contain actual data
+LIP_DATASET_SRC = LIP_DATASET_PATH / "MPV_192_256"
+
+# This is the name of the file where it contains path to data
+LIP_DATASET_FILE = "all_poseA_poseB_clothes.txt"
+
+DATASET_OUT_PATH = LIP_DATASET_PATH / "preprocessed"
+
+LABEL_NAME_LIST = ['body_mask', 'face_hair', 'clothing_mask', 'pose']
+
+LABEL_FOLDER_PATH = [DATASET_OUT_PATH / d for d in LABEL_NAME_LIST]
+for i, name in enumerate(LABEL_FOLDER_PATH):
+    if not os.path.exists(name):
+        os.mkdir(name)
+
+# print(LABEL_FOLDER_PATH[0])
+def get_data_path_raw():
+    train_half_front = []
+    test_half_front = []
+
+    with open(LIP_DATASET_PATH / LIP_DATASET_FILE, 'r') as f:
+        for line in f:
+            elems = line.split("\t")
+            assert len(elems) == 4, "Unexpected readline!"
+            if "train" in line:
+                if "person_half_front.jpg" in line and "cloth_front.jpg" in line:
+                    tmp_person = ""
+                    tmp_cloth = ""
+                    for elem in elems:
+                        if "person_half_front.jpg" in elem:
+                            tmp_person = str(elem)
+                        if "cloth_front.jpg" in elem:
+                            tmp_cloth = str(elem)
+                    train_half_front.append([tmp_person, tmp_cloth])
+                else:
+                    continue
+            elif "test" in line:
+                if "person_half_front.jpg" in line and "cloth_front.jpg" in line:
+                    tmp_person = ""
+                    tmp_cloth = ""
+                    for elem in elems:
+                        if "person_half_front.jpg" in elem:
+                            tmp_person = str(elem)
+                        if "cloth_front.jpg" in elem:
+                            tmp_cloth = str(elem)
+                    test_half_front.append([tmp_person, tmp_cloth])
+                else:
+                    continue
+            else:
+                print("Unexpected behavior!")
+
+    return np.asarray(train_half_front), np.asarray(test_half_front)
+
+def get_data_path():
+    train_half_front = []
+    test_half_front = []
+
+    with open(LIP_DATASET_PATH / LIP_DATASET_FILE, 'r') as f:
+        for line in f:
+            elems = line.split("\t")
+            assert len(elems) == 4, "Unexpected readline!"
+            if "train" in line:
+                if "person_half_front.jpg" in line and "cloth_front.jpg" in line:
+                    tmp_person = ""
+                    tmp_cloth = ""
+                    for elem in elems:
+                        if "person_half_front.jpg" in elem:
+                            tmp_person = str(LIP_DATASET_SRC / elem)
+                        if "cloth_front.jpg" in elem:
+                            tmp_cloth = str(LIP_DATASET_SRC / elem)
+                    train_half_front.append([tmp_person, tmp_cloth])
+                else:
+                    continue
+            elif "test" in line:
+                if "person_half_front.jpg" in line and "cloth_front.jpg" in line:
+                    tmp_person = ""
+                    tmp_cloth = ""
+                    for elem in elems:
+                        if "person_half_front.jpg" in elem:
+                            tmp_person = str(LIP_DATASET_SRC / elem)
+                        if "cloth_front.jpg" in elem:
+                            tmp_cloth = str(LIP_DATASET_SRC / elem)
+                    test_half_front.append([tmp_person, tmp_cloth])
+                else:
+                    continue
+            else:
+                print("Unexpected behavior!")
+
+    return np.asarray(train_half_front), np.asarray(test_half_front)
+
+TRAIN_PATH, TEST_PATH = get_data_path_raw()
+
+LABEL_NAME = {
+    'Background': 0,
+    'Hat': 1,
+    'Hair': 2,
+    'Glove': 3,
+    'Sunglasses': 4,
+    'UpperClothes': 5,
+    'Dress': 6,
+    'Coat': 7,
+    'Socks': 8,
+    'Pants': 9,
+    'Jumpsuits': 10,
+    'Scarf': 11,
+    'Skirt': 12,
+    'Face': 13,
+    'Left-arm': 14,
+    'Right-arm': 15,
+    'Left-leg': 16,
+    'Right-leg': 17,
+    'Left-shoe': 18,
+    'Right-shoe': 19
+}
+
+def get_pose_map(path) -> np.ndarray:
+    """ given a path, return a pose map
+
+    Args:
+        img (np.ndarray): 
+
+    Returns:
+        np.ndarray: [description]
+    """
+    mp_drawing = mp.solutions.drawing_utils
+    mp_pose = mp.solutions.pose
+    mp_holistic = mp.solutions.holistic
+    mp_drawing = mp.solutions.drawing_utils
+    pose = mp_pose.Pose(
+    static_image_mode=True, min_detection_confidence=0.5)
+    image = cv2.imread(path)
+    image_height, image_width, n_channels = image.shape
+    # Convert the BGR image to RGB before processing.
+    results = pose.process(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
+    RED_COLOR = (0, 0, 255)
+    if results.pose_landmarks:
+        annotated_image = np.zeros(shape=(image_height, image_width, n_channels))
+        
+        mp_drawing.draw_landmarks(
+            annotated_image, 
+            results.pose_landmarks,
+            landmark_drawing_spec=mp_drawing.DrawingSpec(
+                # color=RED_COLOR,
+                thickness=4,
+                circle_radius=1
+            ))
+        pose.close()
+        return tf.image.resize(np.asarray(annotated_image) / 255.0, IMG_SHAPE[:2])
+    pose.close()
+    return np.zeros(shape=IMG_SHAPE)
+
+def get_human_parsing(img):
+    assert img.shape == IMG_SHAPE, "Wrong image shape"
+    prediction = model.predict(tf.expand_dims(img, axis=0))[0]
+    return prediction
+
+def create_mask(pred_mask):
+    # pred_mask shape 3d, not 4d
+    pred_mask = tf.argmax(pred_mask, axis=-1)
+    pred_mask = pred_mask[..., tf.newaxis]
+    return pred_mask
+
+# %%
+""" Write files
+
+Writw a lot of files
+
+"""
+
+import re
+from tqdm import tqdm
+import time
+
+r_str = r"\/.*\.jpg$"
+with tqdm(total=TRAIN_PATH.shape[0]) as pbar:
+    for (idx, [img_path, cloth_path]) in enumerate(TRAIN_PATH):
+
+        # time.sleep(0.1)
+
+        # Eg: img path is raw. I.e: does not contains the full path (dataset/lip_mpv_dataset/preprocessed)
+        # img_path: RE321D05M\RE321D05M-Q11@8=person_half_front.jpg
+        # img_path_name: RE321D05M-Q11@8=person_half_front.jpg
+        # img_folder_name: RE321D05M
+        img_path_name = re.findall(r_str, img_path)[0]
+        img_folder_name = img_path[:(len(img_path) - len(img_path_name))]
+        cloth_path_name = re.findall(r_str, cloth_path)[0]
+        cloth_folder_name = cloth_path[:(len(cloth_path) - len(cloth_path_name))]
+
+        assert img_folder_name == cloth_folder_name, "Unexpected behavior"
+
+        for i, name in enumerate(LABEL_FOLDER_PATH):
+            if not os.path.exists(name / img_folder_name):
+                os.mkdir(name / img_folder_name)
+            if not os.path.exists(name / img_folder_name):
+                os.mkdir(name / cloth_folder_name)
+
+        sample_cloth = tf.image.resize(
+            np.asarray(
+                Image.open(
+                    LIP_DATASET_SRC / cloth_path
+                )
+            ), IMG_SHAPE[:2]
+        ) / 255.0
+
+        # sample_img shape (256, 192, 3). Range [0, 1]
+        sample_img = tf.image.resize(
+            np.asarray(
+                Image.open(
+                    LIP_DATASET_SRC / img_path
+                )
+            ), IMG_SHAPE[:2]
+        ) / 255.0
+        
+        if not os.path.exists(LABEL_FOLDER_PATH[3] / img_path):
+            # sample_pose shape (256, 192, 3). Range [0, 1]
+            sample_pose = get_pose_map(str(LIP_DATASET_SRC / img_path))
+            tf.keras.preprocessing.image.save_img(
+                LABEL_FOLDER_PATH[3] / img_path, sample_pose
+            )
+
+        # sample_pose shape (256, 192, 20). Range [0, 1]
+        sample_parsing = get_human_parsing(sample_img)
+        # sample_body_mask shape (256, 192, 1). Range [0, 19]. Representing classes.
+        sample_mask = create_mask(sample_parsing)
+
+        if not os.path.exists(LABEL_FOLDER_PATH[0] / img_path):
+            body_masking_channels = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 15, 16, 17, 18, 19]
+            sample_body_mask = [sample_mask == c for c in body_masking_channels]
+            # sample_body_mask shape (len(body_masking_channels), 256, 192, 1). Range [0, 19]. Representing classes.
+            sample_body_mask = tf.reduce_any(sample_body_mask, axis=0)
+            sample_body_mask = tf.cast(sample_body_mask, dtype=tf.float32)
+            # print(sample_body_mask.shape)
+            # show_img(sample_body_mask)
+            # print(os.path.join(LABEL_FOLDER_PATH[0], img_path_name))
+            tf.keras.preprocessing.image.save_img(
+                LABEL_FOLDER_PATH[0] / img_path, sample_body_mask
+            )
+
+        if not os.path.exists(LABEL_FOLDER_PATH[1] / img_path):
+            face_hair_masking_channels = [1, 2, 13]
+            sample_face_hair_mask = [sample_mask == c for c in face_hair_masking_channels]
+            # sample_face_hair_mask shape (len(face_hair_masking_channels), 256, 192, 1). Range [0, 19]. Representing classes.
+            sample_face_hair_mask = tf.reduce_any(sample_face_hair_mask, axis=0)
+            sample_face_hair_mask = tf.cast(sample_face_hair_mask, dtype=tf.float32)
+
+            sample_face_hair = sample_img * sample_face_hair_mask
+            # print(sample_face_hair.shape)
+            # show_img(sample_face_hair)
+            tf.keras.preprocessing.image.save_img(
+                LABEL_FOLDER_PATH[1] / img_path, sample_face_hair
+            )
+
+        if not os.path.exists(LABEL_FOLDER_PATH[2] / img_path):
+            # Take everything except for the background, face, and hair
+            clothing_masking_channels = [5, 6, 7, 12]
+            sample_clothing_mask = [sample_mask == c for c in clothing_masking_channels]
+            # sample_clothing_mask shape (len(face_hair_masking_channels), 256, 192, 1). Range [0, 19]. Representing classes.
+            sample_clothing_mask = tf.reduce_any(sample_clothing_mask, axis=0)
+            sample_clothing_mask = tf.cast(sample_clothing_mask, dtype=tf.float32)
+            # print(sample_clothing_mask.shape)
+            # show_img(sample_clothing_mask)
+            tf.keras.preprocessing.image.save_img(
+                LABEL_FOLDER_PATH[2] / cloth_path, sample_clothing_mask
+            )
+
+        pbar.update(1)
+    
+
+
+
+# %%
