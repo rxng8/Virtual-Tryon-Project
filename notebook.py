@@ -419,7 +419,7 @@ print(sample_output.shape)
 
 # %%
  
- # This is the U-net model
+# This is the U-net model
 
 """
 Read this u-net article with the cute meow:
@@ -431,7 +431,7 @@ mobile_net_model = tf.keras.applications.MobileNetV2(
     input_shape=IMG_SHAPE, 
     include_top=False)
 mobile_net_model.summary()
-mobile_net_model.trainable = False
+mobile_net_model.trainable = True
 # Use the activations of these layers
 layer_names = [
     'block_1_expand_relu',   # 128x96
@@ -444,14 +444,14 @@ layers = [mobile_net_model.get_layer(name).output for name in layer_names]
 
 # Create the feature extraction model
 wrap_mobile_net_model = tf.keras.Model(inputs=mobile_net_model.input, outputs=layers)
-wrap_mobile_net_model.trainable = False
+wrap_mobile_net_model.trainable = True
 
 
 inputs = tf.keras.Input(shape=(*IMG_SHAPE[:2], 10))
 
 pre_conv = tf.keras.layers.Conv2D(3, (3, 3), padding='same')(inputs)
 
-out4, out3, out2, out1, out0 = wrap_mobile_net_model(pre_conv, training=False)
+out4, out3, out2, out1, out0 = wrap_mobile_net_model(pre_conv, training=True)
 
 up1_tensor = pix2pix.upsample(512, 3)(out0)
 
@@ -479,6 +479,69 @@ out = tf.keras.layers.Conv2DTranspose(
 # We will not use model, we will just use it to see the summary!
 model = tf.keras.Model(inputs, out)
 model.summary()
+
+# %%
+
+# Normal 2D auto encoder model with u net
+
+# Build a simple Convolutional Autoencoder model. Don't use this model tho
+# The reason why this model is deprecated is it's output shape is 3 dimesions
+# so that we can just predict according to parsing 1 or 0 using binary crossentropy loss.
+# Please use the simple parsing dataset for this model.
+
+inputs = tf.keras.layers.Input(shape=IMG_SHAPE)
+x = tf.keras.layers.Conv2D(
+    filters=40, 
+    kernel_size=(3, 3), 
+    activation='relu', 
+    padding='same'
+) (inputs)
+x = tf.keras.layers.MaxPooling2D(
+    pool_size=(2, 2),
+    padding='same'
+) (x)
+
+x = tf.keras.layers.Conv2D(
+    filters=20, 
+    kernel_size=(3, 3), 
+    activation='relu', 
+    padding='same') (x)
+x = tf.keras.layers.MaxPooling2D(
+    pool_size=(2, 2),
+    padding='same'
+) (x)
+
+
+x = tf.keras.layers.Conv2D(
+    filters=20, 
+    kernel_size=(3, 3), 
+    activation='relu', 
+    padding='same') (x)
+x = tf.keras.layers.UpSampling2D(
+    (2, 2)
+) (x)
+
+
+x = tf.keras.layers.Conv2D(
+    filters=40, 
+    kernel_size=(3, 3), 
+    activation='relu', 
+    padding='same') (x)
+x = tf.keras.layers.UpSampling2D(
+    (2, 2)
+) (x)
+
+outputs = tf.keras.layers.Conv2D(
+    filters=1, 
+    kernel_size=(3, 3), 
+    activation='softmax',
+    padding='same') (x)
+
+
+model = tf.keras.Model(inputs, outputs)
+model.summary()
+
+
 
 # %%
 # Deprecated
@@ -535,14 +598,18 @@ def loss_function(real, pred):
     out_pred = wrap_vgg16_model(pred[:,:,:,:3], training=False)
 
     # pixel-pise loss, RGB predicted value
-    loss += tf.reduce_mean(tf.keras.losses.MAE(real[:,:,:,:3], pred[:,:,:,:3]))
+    loss += tf.reduce_mean(tf.math.abs(real[:,:,:,:3] - pred[:,:,:,:3]))
 
+    perceptual_loss = 0
     # Perceptual loss
     for real_features, pred_features in zip(out_real, out_pred):
-        loss += tf.reduce_mean(tf.keras.losses.MAE(real_features, pred_features))
+        perceptual_loss += tf.reduce_mean(tf.math.abs(real_features - pred_features))
+    # perceptual_loss /= len(out_real)
+
+    loss += perceptual_loss
 
     # L1 loss
-    loss += tf.reduce_mean(tf.keras.losses.MAE(real[:,:,:,3:], pred[:,:,:,3:]))
+    loss += tf.reduce_mean(tf.math.abs(real[:,:,:,3:] - pred[:,:,:,3:]))
 
     return loss
 
@@ -558,7 +625,7 @@ def train_step(person_reprs, clothings, labels):
 
 # Training the model
 
-EPOCHS = 4
+EPOCHS = 1
 
 for epoch in range(EPOCHS):
     print("\nStart of epoch %d" % (epoch + 1,))
@@ -589,12 +656,16 @@ for epoch in range(EPOCHS):
         optimizer.apply_gradients(zip(grads, model.trainable_weights))
 
         # Log every 200 batches.
-        if step % 200 == 0:
-            print(
-                "Training loss (for one batch) at step %d: %.4f"
-                % (step, float(loss_value))
-            )
-            print("Seen so far: %s samples" % ((step + 1) * 64))
+        # if step % 200 == 0:
+        #     print(
+        #         "Training loss (for one batch) at step %d: %.4f"
+        #         % (step, float(loss_value))
+        #     )
+        #     print("Seen so far: %s samples" % ((step + 1) * 64))
+
+# %%
+
+model.save('models/viton-mbv2-10epochs')
 
 # %%
 
@@ -621,4 +692,9 @@ print('pred:')
 pred = model(sample_input_batch)
 show_img(pred[r, :, :, 0:3])
 show_img(pred[r, :, :, 3])
+
+
+# %%
+
+
 
