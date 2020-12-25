@@ -465,8 +465,8 @@ print(sample_input["input_cloth"].shape)
 print(sample_output["output_image"].shape)
 print(sample_output["output_cloth_mask"].shape)
 
-
 # %%
+
 # from shutil import copyfile
 # train_path_raw, test_path_raw = get_data_path_raw()
 
@@ -494,191 +494,6 @@ print(sample_output["output_cloth_mask"].shape)
 #     else:
 #         name = name_list[0][1:]
 #         copyfile(DATASET_SRC / url, Path("./reference/inputs") / name)
-
-
-# %%
-
-# Personal representation:
-#   - Pose heatmap (18 channels) Check (3 channels)
-#   - Human segmentation (1 channel) Check (3 channels)
-#   - Face and hair segmentation (3 channels). Human parser prediction
-# 
-
-# - Labels:
-#       - Clothing mask: human parser prediction.
-#       - original person with clothes image.
-
-# - Predict:
-#       - The course agostic of the person.
-#       - The clothing mask.
-
-# This is the U-net model
-
-"""
-Read this u-net article with the cute meow:
-    https://towardsdatascience.com/u-net-b229b32b4a71
-"""
-
-from tensorflow_examples.models.pix2pix import pix2pix
-mobile_net_model = tf.keras.applications.MobileNetV2(
-    input_shape=IMG_SHAPE, 
-    include_top=False)
-mobile_net_model.summary()
-mobile_net_model.trainable = False
-# Use the activations of these layers
-layer_names = [
-    'block_1_expand_relu',   # 128x96
-    'block_3_expand_relu',   # 64x48
-    'block_6_expand_relu',   # 32x24
-    'block_13_expand_relu',  # 16x12
-    'block_16_project',      # 8x6
-]
-layers = [mobile_net_model.get_layer(name).output for name in layer_names]
-
-# Create the feature extraction model
-wrap_mobile_net_model = tf.keras.Model(inputs=mobile_net_model.input, outputs=layers)
-wrap_mobile_net_model.trainable = False
-
-
-# inputs_img = tf.keras.Input(shape=(*IMG_SHAPE[:2], 7), name="inputs_img")
-
-inputs_cloth = tf.keras.Input(shape=(*IMG_SHAPE[:2], 3), name="inputs_cloth")
-# input_concat = tf.concat([inputs_img, inputs_cloth], axis=-1)
-# pre_conv = tf.keras.layers.Conv2D(3, (3, 3), padding='same')(input_concat)
-
-out4, out3, out2, out1, out0 = wrap_mobile_net_model(inputs_cloth, training=False)
-
-up1_tensor = pix2pix.upsample(512, 3)(out0)
-
-cat1_tensor = tf.keras.layers.concatenate([up1_tensor, out1])
-up2_tensor = pix2pix.upsample(256, 3)(cat1_tensor)
-
-cat2_tensor = tf.keras.layers.concatenate([up2_tensor, out2])
-up3_tensor = pix2pix.upsample(128, 3)(cat2_tensor)
-
-cat3_tensor = tf.keras.layers.concatenate([up3_tensor, out3])
-up4_tensor = pix2pix.upsample(64, 3)(cat3_tensor)
-
-cat4_tensor = tf.keras.layers.concatenate([up4_tensor, out4])
-
-# n channels (or neurons, or feature vectors) is 4 because we are predicting 2 things:
-#       - course human image
-#       - clothing mask on the person
-
-# We don't use activation because we have to calculate mse, or we can use relu act
-out1 = tf.keras.layers.Conv2DTranspose(
-    3, 3, strides=2,
-    padding='same',
-    activation='relu'
-) (cat4_tensor)
-
-# out2 = tf.keras.layers.Conv2DTranspose(
-#     1, 3, strides=2,
-#     padding='same',
-#     activation='relu'
-# ) (cat4_tensor)
-
-# We will not use model, we will just use it to see the summary!
-# model = tf.keras.Model([inputs_img, inputs_cloth], [out1, out2])
-mask_model = tf.keras.Model(inputs_cloth, out1)
-mask_model.summary()
-
-# %%
-
-# Normal 2D auto encoder model with u net
-
-# Build a simple Convolutional Autoencoder model. Don't use this model tho
-# The reason why this model is deprecated is it's output shape is 3 dimesions
-# so that we can just predict according to parsing 1 or 0 using binary crossentropy loss.
-# Please use the simple parsing dataset for this model.
-
-# inputs = tf.keras.layers.Input(shape=(*IMG_SHAPE[:2], 10))
-
-inputs_pose = tf.keras.Input(shape=(*IMG_SHAPE[:2], 3), name="inputs_pose")
-inputs_body_mask = tf.keras.Input(shape=(*IMG_SHAPE[:2], 1), name="inputs_body_mask")
-inputs_face_hair = tf.keras.Input(shape=(*IMG_SHAPE[:2], 3), name="inputs_face_hair")
-inputs_cloth = tf.keras.Input(shape=(*IMG_SHAPE[:2], 3), name="inputs_cloth")
-
-inputs_concat = tf.concat([inputs_pose, inputs_body_mask, inputs_face_hair, inputs_cloth], axis=-1)
-
-x = tf.keras.layers.Conv2D(
-    filters=64, 
-    kernel_size=(4, 4), 
-    activation='relu', 
-    padding='same'
-) (inputs_concat)
-x = tf.keras.layers.MaxPooling2D(
-    pool_size=(2, 2),
-    padding='same'
-) (x)
-
-x = tf.keras.layers.Conv2D(
-    filters=128, 
-    kernel_size=(4, 4), 
-    activation='relu', 
-    padding='same') (x)
-x = tf.keras.layers.MaxPooling2D(
-    pool_size=(2, 2),
-    padding='same'
-) (x)
-
-
-x = tf.keras.layers.Conv2D(
-    filters=256, 
-    kernel_size=(4, 4), 
-    activation='relu', 
-    padding='same') (x)
-x = tf.keras.layers.MaxPooling2D(
-    pool_size=(2, 2),
-    padding='same'
-) (x)
-
-
-x = tf.keras.layers.Conv2DTranspose(
-    128, 3, strides=2,
-    padding='same',
-    activation='relu'
-) (x)
-
-x = tf.keras.layers.Conv2DTranspose(
-    64, 3, strides=2,
-    padding='same',
-    activation='relu'
-) (x)
-
-# outputs = tf.keras.layers.Conv2D(
-#     filters=4, 
-#     kernel_size=(4, 4), 
-#     activation='relu',
-#     padding='same') (x)
-
-
-out1 = tf.keras.layers.Conv2DTranspose(
-    3, 3, strides=2,
-    padding='same',
-    activation='relu'
-) (x)
-
-# out2 = tf.keras.layers.Conv2DTranspose(
-#     1, 3, strides=2,
-#     padding='same',
-#     activation='relu'
-# ) (x)
-
-pre_out2 = tf.keras.layers.Conv2D(3, (4,4), padding='same')(inputs_concat)
-
-out2 = mask_model(pre_out2)
-
-# We will not use model, we will just use it to see the summary!
-model = tf.keras.Model(
-    [inputs_pose, inputs_body_mask, inputs_face_hair, inputs_cloth], 
-    [out1, out2]
-)
-model.summary()
-
-# model = tf.keras.Model(inputs, outputs)
-# model.summary()
-
 
 
 # %%
@@ -724,6 +539,16 @@ layers = [vgg16.get_layer(name).output for name in layer_names]
 wrap_vgg16_model = tf.keras.Model(inputs=vgg16.input, outputs=layers)
 wrap_vgg16_model.trainable = False
 
+# Copied from xthan github
+def compute_error(real, fake, mask=None):
+    if mask == None:
+        return tf.reduce_mean(tf.abs(fake - real))  # simple loss
+    else:
+        _, h, w, _ = real.get_shape().as_list()
+        sampled_mask = tf.image.resize_images(mask, (h, w),
+            method=tf.image.ResizeMethod.NEAREST_NEIGHBOR)
+        return tf.reduce_mean(tf.abs(fake - real) * sampled_mask)  # simple loss
+
 def loss_function(real, pred):
     # Read about perceptual loss here:
     # https://towardsdatascience.com/perceptual-losses-for-real-time-style-transfer-and-super-resolution-637b5d93fa6d
@@ -749,8 +574,8 @@ def loss_function(real, pred):
 
 def mask_loss_function(real, pred):
     # L1 loss
-    return tf.reduce_mean(tf.keras.losses.BinaryCrossentropy()(real,pred))
-    # return tf.reduce_mean(tf.abs(real - pred))
+    # return tf.reduce_mean(tf.keras.losses.BinaryCrossentropy()(real,pred))
+    return tf.reduce_mean(tf.abs(real - pred))
 
 optimizer = tf.keras.optimizers.Adam(learning_rate=2e-3)
 
@@ -758,13 +583,26 @@ def train_step(person_reprs, clothings, labels):
     # Use gradient tape
     pass
 
+# %%
+from core.models import *
+model = get_simple_unet_model()
+
+# %%
+
+model.summary()
 
 
 # %%
 
+# Checkpoint path
+
+checkpoint_path = "models/checkpoints/viton_2.ckpt"
+# checkpoint_dir = os.path.dirname(checkpoint_path)
+if os.path.exists(checkpoint_path):
+    model.load_weights(checkpoint_path)
 # Training the model
 
-EPOCHS = 10
+EPOCHS = 1
 with tf.device('/device:CPU:0'):
     for epoch in range(EPOCHS):
         print("\nStart of epoch %d" % (epoch + 1,))
@@ -802,6 +640,9 @@ with tf.device('/device:CPU:0'):
             # Run one step of gradient descent by updating
             # the value of the variables to minimize the loss.
             optimizer.apply_gradients(zip(grads, model.trainable_weights))
+
+        # For each epoch, save checkpoint
+        model.save_weights(checkpoint_path)
 
             # Log every 200 batches.
             # if step % 200 == 0:
