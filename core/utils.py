@@ -14,12 +14,19 @@ from tensorflow.keras.preprocessing import image_dataset_from_directory
 import cv2
 
 def conv(batch_input, out_channels):
+
+    padded_input = tf.pad(
+        batch_input, 
+        [[0, 0], [1, 1], [1, 1], [0, 0]], 
+        mode="CONSTANT"
+    )
+
     return tf.keras.layers.Conv2D(
         filters=out_channels, 
         kernel_size=(4, 4), 
         activation='relu', 
-        padding='same'
-    )(batch_input)
+        padding='valid'
+    )(padded_input)
 
 def max_pool(batch_input):
     return tf.keras.layers.MaxPooling2D(
