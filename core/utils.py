@@ -89,11 +89,11 @@ def final_deconv(batch_input, out_channels):
         activation='sigmoid'
     ) (batch_input)
 
-def deconv(batch_input, out_channels):
+def deconv(batch_input, out_channels, activation='relu'):
     return tf.keras.layers.Conv2DTranspose(
         out_channels, 4, strides=2,
         padding='same',
-        activation='relu'
+        activation=activation
     ) (batch_input)
 
 def upsampling(batch_input):
@@ -108,7 +108,8 @@ def create_mask(pred_mask):
 def preprocess_image(
         img: np.ndarray, 
         shape=(256, 192),
-        resize_method=tf.image.ResizeMethod.BILINEAR
+        resize_method=tf.image.ResizeMethod.BILINEAR,
+        tanh_range=True
     ) -> tf.Tensor:
     # Expect range 0 - 255
     resized = tf.image.resize(
@@ -117,7 +118,8 @@ def preprocess_image(
         method=resize_method
     )
     rescaled = tf.cast(resized, dtype=float) / 255.0
-    rescaled = (rescaled - 0.5) * 2 # range [-1, 1]
+    if tanh_range:
+        rescaled = (rescaled - 0.5) * 2 # range [-1, 1]
     # Convert to BGR
     bgr = rescaled[..., ::-1]
     return bgr

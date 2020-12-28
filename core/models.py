@@ -340,7 +340,68 @@ def get_res_unet_model():
     outputs = deconv(cat4_tensor, 32)
     outputs = conv(outputs, 32)
     outputs1 = conv(outputs, 3, 'tanh')
-    outputs2 = conv(outputs, 1, 'tanh')
+    outputs2 = conv(outputs, 2, 'sigmoid')
+    # out2 = final_conv(out2, 1)
+
+    model = tf.keras.Model(
+        [inputs_pose, inputs_body_mask, inputs_face_hair, inputs_cloth], 
+        [outputs1, outputs2]
+    )
+
+    return model
+
+
+def get_very_simple_unet_model():
+
+    inputs_pose = tf.keras.Input(shape=(*IMG_SHAPE[:2], 3), name="inputs_pose")
+    inputs_body_mask = tf.keras.Input(shape=(*IMG_SHAPE[:2], 1), name="inputs_body_mask")
+    inputs_face_hair = tf.keras.Input(shape=(*IMG_SHAPE[:2], 3), name="inputs_face_hair")
+    inputs_cloth = tf.keras.Input(shape=(*IMG_SHAPE[:2], 3), name="inputs_cloth")
+
+    inputs_concat = tf.concat(
+        [inputs_pose, inputs_body_mask, inputs_face_hair, inputs_cloth], 
+        axis=-1
+    )
+
+    encoder1 = conv(inputs_concat, 32) # 256 x 192 x 32
+    pool1 = max_pool(encoder1) # 128 x 96 x 32
+
+    encoder2 = conv(pool1, 64) # 128 x 96 x 64
+    pool2 = max_pool(encoder2) # 64 x 48 x 64
+    pool2 = dropout(pool2)
+
+    encoder3 = conv(pool2, 128) # 64 x 48 x 128
+    pool3 = max_pool(encoder3) # 32 x 24 x 128
+    pool3 = dropout(pool3)
+
+    encoder4 = conv(pool3, 256) # 32 x 24 x 256
+    pool4 = max_pool(encoder4) # 16 x 12 x 256
+    pool4 = dropout(pool4)
+
+    encoder5 = conv(pool4, 512) # 16 x 12 x 512
+    pool5 = max_pool(encoder5) # 8 x 6 x 512
+    pool5 = dropout(pool5)
+
+    up1_tensor = pix2pix.upsample(512, 4)(pool5)  # 16 x 12 x 512
+    up1_tensor = dropout(up1_tensor)
+
+    up2_tensor = pix2pix.upsample(256, 4)(tf.concat([
+        up1_tensor, encoder5 # each 16 x 12 x 512
+    ], axis=-1))  # 32 x 24 x 256
+    up2_tensor = dropout(up2_tensor)
+
+    up3_tensor = pix2pix.upsample(128, 4)(tf.concat([
+        up2_tensor, encoder4 # each 32 x 24 x 256
+    ], axis=-1))  # 64 x 48 x 128
+    up3_tensor = dropout(up3_tensor)
+
+    up4_tensor = pix2pix.upsample(64, 4)(tf.concat([
+        up3_tensor, encoder3 # Each 64 x 48 x 128
+    ], axis=-1))  # 128 x 96 x 64
+    up4_tensor = dropout(up4_tensor)
+
+    outputs1 = deconv(up4_tensor, 3, activation='tanh')
+    outputs2 = deconv(up4_tensor, 2, activation='sigmoid')
     # out2 = final_conv(out2, 1)
 
     model = tf.keras.Model(
