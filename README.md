@@ -64,6 +64,13 @@ constrain the synthesis process.
 
 <br>
 
+4. Results of the VITON networks:
+
+<div style = "text-align:center;">
+  <img src="./doc/sample_label.png" width="130" />
+  <img src="./doc/sample_prediction.png" width="130" />
+</div>
+
 ## Installation
 * This repo is in initial state that only contains jupyter notebook version of the code (not the full pipeline library/api). To experiment and execute the code cell in each `notebook.py` file, please install the following:
   * [Visual Studio Code](https://code.visualstudio.com/): Visual Studio Code is needed to run the python file as cell ("`# %%`" represent a new cell).
@@ -72,6 +79,8 @@ constrain the synthesis process.
   * Download the dataset:
     * [Look into person dataset](https://drive.google.com/file/d/1mLHY6m24jkPlCze_TUJvbU9BoXAedGs9/view): This dataset is the clothing dataset for the main virtual try-on task.
     * [Human Parsing dataset](https://drive.google.com/drive/folders/1ZjNrTb7T_SsOdck76qDcd5OHkFEU0C6Q): This is the dataset for training human parsing task, in order to create human representation.
+    * [Fashionista Dataset](http://vision.is.tohoku.ac.jp/~kyamagu/research/clothing_parsing/): The dataset for segmenting clothes and body pose.
+    * [Deep Fashion](https://github.com/switchablenorms/DeepFashion2): Deep fashion dataset. <!--Pass to unpack zip: 2019Deepfashion2** -->
   * Finally, when you are running the notebook, try to config the right path to the dataset.
 
 * Here are some more datasets that you can look over:
