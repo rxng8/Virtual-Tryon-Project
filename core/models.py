@@ -203,6 +203,7 @@ def get_doubly_model(IMG_SHAPE=(256, 192, 3)):
 
     return model
 
+# Deprecated model
 def get_simple_unet_model(IMG_SHAPE=(256, 192, 3)):
 
     # Simple U-net architecture
@@ -221,21 +222,38 @@ def get_simple_unet_model(IMG_SHAPE=(256, 192, 3)):
     pool1 = max_pool(encoder1) # 128 x 96 x 32
 
     encoder2 = conv(pool1, 64) # 128 x 96 x 64
-    pool2 = max_pool(encoder2) # 64 x 48 x 64
+    encoder2_res = conv(encoder2, 64) # 128 x 96 x 64
+    cat2 = tf.concat([encoder2, encoder2_res], axis=-1)
+    pool2 = max_pool(cat2) # 64 x 48 x 64
     
-    encoder3 = conv(pool2, 128) # 64 x 48 x 128
-    pool3 = max_pool(encoder3) # 32 x 24 x 128
+    encoder3 = conv(pool2, 64) # 128 x 96 x 64
+    encoder3_res = conv(encoder3, 64) # 128 x 96 x 64
+    cat3 = tf.concat([encoder3, encoder3_res], axis=-1)
+    pool3 = max_pool(cat3) # 64 x 48 x 64
+
+    encoder4 = conv(pool3, 64) # 128 x 96 x 64
+    encoder4_res = conv(encoder4, 64) # 128 x 96 x 64
+    cat4 = tf.concat([encoder4, encoder4_res], axis=-1)
+    pool4 = max_pool(cat4) # 64 x 48 x 64
+
+    encoder5 = conv(pool4, 64) # 128 x 96 x 64
+    encoder5_res = conv(encoder5, 64) # 128 x 96 x 64
+    out_encoder = tf.concat([encoder5, encoder5_res], axis=-1)
+    # pool5 = max_pool(tf.concat([encoder5, encoder5_res], axis=-1)) # 64 x 48 x 64
     
-    encoder4 = conv(pool3, 256) # 32 x 24 x 256
-    pool4 = max_pool(encoder4) # 16 x 12 x 256
+    # encoder3 = conv(pool2, 128) # 64 x 48 x 128
+    # pool3 = max_pool(encoder3) # 32 x 24 x 128
+    
+    # encoder4 = conv(pool3, 256) # 32 x 24 x 256
+    # pool4 = max_pool(encoder4) # 16 x 12 x 256
 
-    encoder5 = conv(pool4, 512) # 16 x 12 x 512
-    pool5 = max_pool(encoder5) # 8 x 6 x 512
+    # encoder5 = conv(pool4, 512) # 16 x 12 x 512
+    # pool5 = max_pool(encoder5) # 8 x 6 x 512
 
-    up1_tensor = pix2pix.upsample(512, 4)(pool5) # 16 x 12 x 512
+    # up1_tensor = pix2pix.upsample(512, 4)(pool5) # 16 x 12 x 512
 
-    cat1_tensor = tf.keras.layers.concatenate([up1_tensor, encoder5]) # 16 x 12 x 512
-    up2_tensor = pix2pix.upsample(256, 4)(cat1_tensor)  # 32 x 24 x 256
+    # cat1_tensor = tf.keras.layers.concatenate([up1_tensor, encoder5]) # 16 x 12 x 512
+    up2_tensor = pix2pix.upsample(256, 4)(out_encoder)  # 32 x 24 x 256
 
     cat2_tensor = tf.keras.layers.concatenate([up2_tensor, encoder4])  # 32 x 24 x 256
     up3_tensor = pix2pix.upsample(128, 4)(cat2_tensor)  # 64 x 48 x 128
@@ -248,12 +266,147 @@ def get_simple_unet_model(IMG_SHAPE=(256, 192, 3)):
 
     # cat5_tensor = tf.keras.layers.concatenate([up5_tensor, encoder1])
 
-    out1 = final_deconv(cat4_tensor, 3)
+    out1 = deconv(cat4_tensor, 32)
+    out1 = final_conv(out1, 3)
     out2 = final_deconv(cat4_tensor, 1)
+    # out2 = final_conv(out2, 1)
 
     model = tf.keras.Model(
         [inputs_pose, inputs_body_mask, inputs_face_hair, inputs_cloth], 
         [out1, out2]
+    )
+
+    return model
+
+
+def get_res_unet_model():
+
+    inputs_pose = tf.keras.Input(shape=(*IMG_SHAPE[:2], 3), name="inputs_pose")
+    inputs_body_mask = tf.keras.Input(shape=(*IMG_SHAPE[:2], 1), name="inputs_body_mask")
+    inputs_face_hair = tf.keras.Input(shape=(*IMG_SHAPE[:2], 3), name="inputs_face_hair")
+    inputs_cloth = tf.keras.Input(shape=(*IMG_SHAPE[:2], 3), name="inputs_cloth")
+
+    inputs_concat = tf.concat(
+        [inputs_pose, inputs_body_mask, inputs_face_hair, inputs_cloth], 
+        axis=-1
+    )
+
+    encoder1 = conv(inputs_concat, 32) # 256 x 192 x 32
+    pool1 = max_pool(encoder1) # 128 x 96 x 32
+
+    encoder2 = conv(pool1, 64) # 128 x 96 x 64
+    encoder2_res = conv(encoder2, 64) # 128 x 96 x 64
+    cat2 = tf.concat([encoder2, encoder2_res], axis=-1)
+    pool2 = max_pool(cat2) # 64 x 48 x 64
+    pool2 = dropout(pool2)
+
+    encoder3 = conv(pool2, 128) # 128 x 96 x 64
+    encoder3_res = conv(encoder3, 128) # 128 x 96 x 64
+    cat3 = tf.concat([encoder3, encoder3_res], axis=-1)
+    pool3 = max_pool(cat3) # 64 x 48 x 64
+    pool3 = dropout(pool3)
+
+    encoder4 = conv(pool3, 256) # 128 x 96 x 64
+    encoder4_res = conv(encoder4, 256) # 128 x 96 x 64
+    cat4 = tf.concat([encoder4, encoder4_res], axis=-1)
+    pool4 = max_pool(cat4) # 64 x 48 x 64
+    pool4 = dropout(pool4)
+
+    encoder5 = conv(pool4, 512) # 128 x 96 x 64
+    encoder5_res = conv(encoder5, 512) # 128 x 96 x 64
+    out_encoder = tf.concat([encoder5, encoder5_res], axis=-1)
+    
+    bottleneck = conv(out_encoder, 1024)
+
+    up2_tensor = pix2pix.upsample(256, 4)(bottleneck)  # 32 x 24 x 256
+    up2_tensor = dropout(up2_tensor)
+
+    cat2_tensor = tf.keras.layers.concatenate([up2_tensor, encoder4_res])  # 32 x 24 x 256
+    cat2_tensor = conv(cat2_tensor, 512)
+    
+    up3_tensor = pix2pix.upsample(128, 4)(cat2_tensor)  # 64 x 48 x 128
+    up3_tensor = dropout(up3_tensor)
+
+    cat3_tensor = tf.keras.layers.concatenate([up3_tensor, encoder3_res]) # 64 x 48 x 128
+    cat3_tensor = conv(cat3_tensor, 256)
+
+    up4_tensor = pix2pix.upsample(64, 4)(cat3_tensor) # 128 x 96 x 64
+    up4_tensor = dropout(up4_tensor)
+
+    cat4_tensor = tf.keras.layers.concatenate([up4_tensor, encoder2_res]) # 128 x 96 x 64
+    cat4_tensor = conv(cat4_tensor, 128)
+    
+
+    outputs = deconv(cat4_tensor, 32)
+    outputs = conv(outputs, 32)
+    outputs1 = conv(outputs, 3, 'tanh')
+    outputs2 = conv(outputs, 2, 'sigmoid')
+    # out2 = final_conv(out2, 1)
+
+    model = tf.keras.Model(
+        [inputs_pose, inputs_body_mask, inputs_face_hair, inputs_cloth], 
+        [outputs1, outputs2]
+    )
+
+    return model
+
+
+def get_very_simple_unet_model():
+
+    inputs_pose = tf.keras.Input(shape=(*IMG_SHAPE[:2], 3), name="inputs_pose")
+    inputs_body_mask = tf.keras.Input(shape=(*IMG_SHAPE[:2], 1), name="inputs_body_mask")
+    inputs_face_hair = tf.keras.Input(shape=(*IMG_SHAPE[:2], 3), name="inputs_face_hair")
+    inputs_cloth = tf.keras.Input(shape=(*IMG_SHAPE[:2], 3), name="inputs_cloth")
+
+    inputs_concat = tf.concat(
+        [inputs_pose, inputs_body_mask, inputs_face_hair, inputs_cloth], 
+        axis=-1
+    )
+
+    encoder1 = conv(inputs_concat, 32) # 256 x 192 x 32
+    pool1 = max_pool(encoder1) # 128 x 96 x 32
+
+    encoder2 = conv(pool1, 64) # 128 x 96 x 64
+    pool2 = max_pool(encoder2) # 64 x 48 x 64
+    pool2 = dropout(pool2)
+
+    encoder3 = conv(pool2, 128) # 64 x 48 x 128
+    pool3 = max_pool(encoder3) # 32 x 24 x 128
+    pool3 = dropout(pool3)
+
+    encoder4 = conv(pool3, 256) # 32 x 24 x 256
+    pool4 = max_pool(encoder4) # 16 x 12 x 256
+    pool4 = dropout(pool4)
+
+    encoder5 = conv(pool4, 512) # 16 x 12 x 512
+    pool5 = max_pool(encoder5) # 8 x 6 x 512
+    pool5 = dropout(pool5)
+
+    up1_tensor = pix2pix.upsample(512, 4)(pool5)  # 16 x 12 x 512
+    up1_tensor = dropout(up1_tensor)
+
+    up2_tensor = pix2pix.upsample(256, 4)(tf.concat([
+        up1_tensor, encoder5 # each 16 x 12 x 512
+    ], axis=-1))  # 32 x 24 x 256
+    up2_tensor = dropout(up2_tensor)
+
+    up3_tensor = pix2pix.upsample(128, 4)(tf.concat([
+        up2_tensor, encoder4 # each 32 x 24 x 256
+    ], axis=-1))  # 64 x 48 x 128
+    up3_tensor = dropout(up3_tensor)
+
+    up4_tensor = pix2pix.upsample(64, 4)(tf.concat([
+        up3_tensor, encoder3 # Each 64 x 48 x 128
+    ], axis=-1))  # 128 x 96 x 64
+    up4_tensor = dropout(up4_tensor)
+
+    outputs1 = deconv(up4_tensor, 3, activation='tanh')
+    outputs2 = deconv(up4_tensor, 2, activation='sigmoid')
+    # out2 = final_conv(out2, 1)
+
+    model = tf.keras.Model(
+        [inputs_pose, inputs_body_mask, inputs_face_hair, inputs_cloth], 
+        [outputs1, outputs2]
     )
 
     return model
