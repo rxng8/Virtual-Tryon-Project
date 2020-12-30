@@ -10,6 +10,7 @@ from PIL import Image
 import math
 import os
 import re
+from IPython import display
 
 import tensorflow as tf
 from tensorflow.keras.preprocessing import image_dataset_from_directory
@@ -17,6 +18,8 @@ import cv2
 
 import mediapipe as mp
 
+from core.utils import *
+from core.models import *
 
 # config
 
@@ -58,7 +61,7 @@ LABEL_NAME_LIST = ['body_mask', 'face_hair', 'clothing_mask', 'pose']
 LABEL_FOLDER_PATH = [DATASET_OUT_PATH / d for d in LABEL_NAME_LIST]
 
 BATCH_SIZE = 8
-STEP_PER_EPOCHS = 20
+
 IMG_SHAPE = (256, 192, 3)
 
 MASK_THRESHOLD = 0.9
@@ -198,125 +201,72 @@ def get_pose_map_generator(path_list: np.ndarray) -> None:
         yield np.asarray(annotated_image) / 255.0
     pose.close()
 
-def get_pose_map(path) -> np.ndarray:
-    """ given a path, return a pose map
-
-    Args:
-        img (np.ndarray): 
-
-    Returns:
-        np.ndarray: [description]
-    """
-    mp_drawing = mp.solutions.drawing_utils
-    mp_pose = mp.solutions.pose
-    mp_holistic = mp.solutions.holistic
-    mp_drawing = mp.solutions.drawing_utils
-    pose = mp_pose.Pose(
-    static_image_mode=True, min_detection_confidence=0.5)
-    image = cv2.imread(path)
-    image_height, image_width, n_channels = image.shape
-    # Convert the BGR image to RGB before processing.
-    results = pose.process(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
-    RED_COLOR = (0, 0, 255)
-    if results.pose_landmarks:
-        annotated_image = np.zeros(shape=(image_height, image_width, n_channels))
-        
-        mp_drawing.draw_landmarks(
-            annotated_image, 
-            results.pose_landmarks,
-            landmark_drawing_spec=mp_drawing.DrawingSpec(
-                # color=RED_COLOR,
-                thickness=4,
-                circle_radius=1
-            ))
-        pose.close()
-        return tf.image.resize(np.asarray(annotated_image) / 255.0, IMG_SHAPE[:2])
-    pose.close()
-    return np.zeros(shape=IMG_SHAPE)
-
 def get_human_parsing(img):
     assert img.shape == IMG_SHAPE, "Wrong image shape"
     prediction = parsing_model.predict(tf.expand_dims(img, axis=0))[0]
     return prediction
 
-def create_mask(pred_mask):
-    # pred_mask shape 3d, not 4d
-    pred_mask = tf.argmax(pred_mask, axis=-1)
-    pred_mask = pred_mask[..., tf.newaxis]
-    return pred_mask
-
-def show_img(img):
-    if len(img.shape) == 3:
-        plt.figure()
-        plt.imshow(img)
-        plt.axis('off')
-        plt.show()
-    elif len(img.shape) == 2:
-        plt.figure()
-        plt.imshow(img, cmap='gray')
-        plt.axis('off')
-        plt.show()
-
 # %%
 
 # Sample data
-with tf.device('/device:GPU:0'):
-    r = np.random.randint(0, TRAIN_PATH.shape[0] - 1)
+r = np.random.randint(0, TRAIN_PATH.shape[0] - 1)
 
-    # sample_img shape (256, 192, 3). Range [0, 1]
-    sample_cloth = tf.image.resize(
-        np.asarray(
-            Image.open(
-                TRAIN_PATH[r, 1]
-            )
-        ), IMG_SHAPE[:2]
-    ) / 255.0
-    show_img(sample_cloth)
+sample_cloth = preprocess_image(
+    np.asarray(
+        Image.open(
+            DATASET_SRC / TRAIN_PATH[r,1]
+        )
+    ), IMG_SHAPE[:2]
+)
+print(f"Min val: {tf.reduce_min(sample_cloth)}, max val: {tf.reduce_max(sample_cloth)}")
+show_img(deprocess_img(sample_cloth))
 
-    # sample_img shape (256, 192, 3). Range [0, 1]
-    sample_img = tf.image.resize(
-        np.asarray(
-            Image.open(
-                TRAIN_PATH[r, 0]
-            )
-        ), IMG_SHAPE[:2]
-    ) / 255.0
+# sample_img shape (256, 192, 3). Range [0, 1]
+sample_img = preprocess_image(
+    np.asarray(
+        Image.open(
+                DATASET_SRC / TRAIN_PATH[r,0]
+        )
+    ), IMG_SHAPE[:2]
+)
+print(f"Min val: {tf.reduce_min(sample_img)}, max val: {tf.reduce_max(sample_img)}")
+show_img(deprocess_img(sample_img))
 
-    show_img(sample_img)
+# sample_pose shape (256, 192, 3). Range [0, 1].
+sample_pose = preprocess_image (
+    np.asarray(Image.open(LABEL_FOLDER_PATH[3] / TRAIN_PATH[r,0])),
+    IMG_SHAPE[:2]
+)
+print(f"Min val: {tf.reduce_min(sample_pose)}, max val: {tf.reduce_max(sample_pose)}")
+show_img(deprocess_img(sample_pose))
 
-    # sample_pose shape (256, 192, 3). Range [0, 1]
-    sample_pose = get_pose_map(TRAIN_PATH[r, 0])
-    show_img(sample_pose)
+# sample_body_mask shape (256, 192, 1).
+sample_body_mask =  preprocess_image(
+    tf.expand_dims(np.asarray(Image.open(LABEL_FOLDER_PATH[0] / TRAIN_PATH[r,0])), axis=2),
+    IMG_SHAPE[:2],
+    resize_method=tf.image.ResizeMethod.NEAREST_NEIGHBOR,
+    tanh_range=False
+)
+print(f"Min val: {tf.reduce_min(sample_body_mask)}, max val: {tf.reduce_max(sample_body_mask)}")
+show_img(deprocess_img(sample_body_mask))
 
-    # sample_pose shape (256, 192, 20). Range [0, 1]
-    sample_parsing = get_human_parsing(sample_img)
-    # sample_body_mask shape (256, 192, 1). Range [0, 19]. Representing classes.
-    sample_mask = create_mask(sample_parsing)
+# sample_face_hair shape (256, 192, 1).
+sample_face_hair = preprocess_image(
+    np.asarray(Image.open(LABEL_FOLDER_PATH[1] / TRAIN_PATH[r,0])),
+    IMG_SHAPE[:2]
+)
+print(f"Min val: {tf.reduce_min(sample_face_hair)}, max val: {tf.reduce_max(sample_face_hair)}")
+show_img(deprocess_img(sample_face_hair))
 
-    body_masking_channels = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 15, 16, 17, 18, 19]
-    sample_body_mask = [sample_mask == c for c in body_masking_channels]
-    # sample_body_mask shape (len(body_masking_channels), 256, 192, 1). Range [0, 19]. Representing classes.
-    sample_body_mask = tf.reduce_any(sample_body_mask, axis=0)
-    sample_body_mask = tf.cast(sample_body_mask, dtype=tf.float32)
-    show_img(sample_body_mask)
-
-    face_hair_masking_channels = [1, 2, 13]
-    sample_face_hair_mask = [sample_mask == c for c in face_hair_masking_channels]
-    # sample_face_hair_mask shape (len(face_hair_masking_channels), 256, 192, 1). Range [0, 19]. Representing classes.
-    sample_face_hair_mask = tf.reduce_any(sample_face_hair_mask, axis=0)
-    sample_face_hair_mask = tf.cast(sample_face_hair_mask, dtype=tf.float32)
-    # show_img(sample_face_hair_mask)
-
-    sample_face_hair = sample_img * sample_face_hair_mask
-    show_img(sample_face_hair)
-
-    # Take everything except for the background, face, and hair
-    clothing_masking_channels = [5, 6, 7, 12]
-    sample_clothing_mask = [sample_mask == c for c in clothing_masking_channels]
-    # sample_clothing_mask shape (len(face_hair_masking_channels), 256, 192, 1). Range [0, 19]. Representing classes.
-    sample_clothing_mask = tf.reduce_any(sample_clothing_mask, axis=0)
-    sample_clothing_mask = tf.cast(sample_clothing_mask, dtype=tf.float32)
-    show_img(sample_clothing_mask)
+# sample_clothing_mask shape (256, 192, 1).
+sample_clothing_mask = preprocess_image(
+    tf.expand_dims(np.asarray(Image.open(LABEL_FOLDER_PATH[2] / TRAIN_PATH[r,1])), axis=2),
+    IMG_SHAPE[:2],
+    resize_method=tf.image.ResizeMethod.NEAREST_NEIGHBOR,
+    tanh_range=False
+)
+print(f"Min val: {tf.reduce_min(sample_clothing_mask)}, max val: {tf.reduce_max(sample_clothing_mask)}")
+show_img(deprocess_img(sample_clothing_mask))
 
 # %%
 
@@ -373,8 +323,7 @@ def train_generator_deprecated():
         
         yield tf.concat([sample_pose, sample_body_mask, sample_face_hair, sample_cloth], axis=2), \
             tf.concat([sample_img, sample_clothing_mask], axis=2)
-def preprocess_image(img: np.ndarray, shape) -> tf.Tensor:
-    return tf.image.resize(img, shape) / 255.0
+
 
 def train_generator():
     for (idx, [img_path, cloth_path]) in enumerate(TRAIN_PATH):
@@ -402,12 +351,16 @@ def train_generator():
             np.asarray(Image.open(LABEL_FOLDER_PATH[3] / img_path)),
             IMG_SHAPE[:2]
         )
+        if tf.reduce_max(sample_pose) == -1.0:
+            continue
         # show_img(sample_pose)
 
         # sample_body_mask shape (256, 192, 1).
         sample_body_mask =  preprocess_image(
             tf.expand_dims(np.asarray(Image.open(LABEL_FOLDER_PATH[0] / img_path)), axis=2),
-            IMG_SHAPE[:2]
+            IMG_SHAPE[:2],
+            resize_method=tf.image.ResizeMethod.NEAREST_NEIGHBOR,
+            tanh_range=False
         )
         # show_img(sample_body_mask)
 
@@ -421,7 +374,9 @@ def train_generator():
         # sample_clothing_mask shape (256, 192, 1).
         sample_clothing_mask = preprocess_image(
             tf.expand_dims(np.asarray(Image.open(LABEL_FOLDER_PATH[2] / cloth_path)), axis=2),
-            IMG_SHAPE[:2]
+            IMG_SHAPE[:2],
+            resize_method=tf.image.ResizeMethod.NEAREST_NEIGHBOR,
+            tanh_range=False
         )
         # show_img(sample_clothing_mask)
 
@@ -451,9 +406,9 @@ train_ds = tf.data.Dataset.from_generator(
         }
     )
 )
-train_batch_ds = train_ds.batch(BATCH_SIZE)
+train_batch_ds = train_ds.shuffle(1000).batch(BATCH_SIZE)
 it = iter(train_ds)
-
+it_batch = iter(train_batch_ds)
 # %%
 
 # test dataset
@@ -520,12 +475,13 @@ class PerceptualVGG16(tf.keras.Model):
 
 # %%
 
-vgg16 = tf.keras.applications.VGG16(
+vgg19 = tf.keras.applications.VGG19(
     include_top=False, 
     weights='imagenet',
     input_shape=IMG_SHAPE
 )
-vgg16.trainable = False
+vgg19.trainable = False
+# vgg19.summary()
 layer_names = [
     'block1_conv2', # 256 x 192 x 64
     'block2_conv2', # 128 x 96 x 128
@@ -533,11 +489,11 @@ layer_names = [
     'block4_conv2', # 32 x 24 x 512
     'block5_conv2'  # 16 x 12 x 512
 ]
-layers = [vgg16.get_layer(name).output for name in layer_names]
+layers = [vgg19.get_layer(name).output for name in layer_names]
 
 # Create the feature extraction model
-wrap_vgg16_model = tf.keras.Model(inputs=vgg16.input, outputs=layers)
-wrap_vgg16_model.trainable = False
+wrap_vgg19_model = tf.keras.Model(inputs=vgg19.input, outputs=layers)
+wrap_vgg19_model.trainable = False
 
 # Copied from xthan github
 def compute_error(real, fake, mask=None):
@@ -556,94 +512,119 @@ def loss_function(real, pred):
     # have to reduce mean to a constant
 
     # mask the real and pred first. TODO: Do we need to?
+    # # Convert RGB to BGR. Deprecated because the image originally is converted
+    # to BGR through preprocessing state
+    # bgr_real = real[..., ::-1]
+    # bgr_pred = pred[..., ::-1]
 
     # Perceptual loss eval
-    out_real = wrap_vgg16_model(real, training=False)
-    out_pred = wrap_vgg16_model(pred, training=False)
+    out_real = wrap_vgg19_model(real, training=False)
+    out_pred = wrap_vgg19_model(pred, training=False)
 
     # pixel-pise loss, RGB predicted value
-    pixel_loss = tf.reduce_mean(tf.math.abs(real - pred))
+    pixel_loss = compute_mse_loss(real, pred)
 
-    perceptual_loss = 0
     # Perceptual loss
-    for real_features, pred_features in zip(out_real, out_pred):
-        perceptual_loss += tf.reduce_mean(tf.math.abs(real_features - pred_features))
+    # for real_features, pred_features in zip(out_real, out_pred):
+    #     perceptual_loss += tf.reduce_mean(tf.math.abs(real_features - pred_features))
     # perceptual_loss /= len(out_real)
+    # Compute perceptual loss manually
+    p1 = compute_mse_loss(out_real[0], out_pred[0]) / 5.3 * 2.5
+    p2 = compute_mse_loss(out_real[1], out_pred[1]) / 2.7  / 1.2
+    p3 = compute_mse_loss(out_real[2], out_pred[2]) / 1.35 / 2.3
+    p4 = compute_mse_loss(out_real[3], out_pred[3]) / 0.67 / 8.2
+    p5 = compute_mse_loss(out_real[4], out_pred[4]) / 0.16 
 
-    return pixel_loss + perceptual_loss
+    perceptual_loss = (p1 + p2 + p3 + p4 + p5)  / 5.0 / 128.0
+
+    return 1.0 * pixel_loss + 3.0 * perceptual_loss
 
 def mask_loss_function(real, pred):
     # L1 loss
     # return tf.reduce_mean(tf.keras.losses.BinaryCrossentropy()(real,pred))
-    return tf.reduce_mean(tf.abs(real - pred))
+    # return 1.0 * compute_mse_loss(real, pred)
+    return 1.0 * tf.keras.losses.SparseCategoricalCrossentropy()(real, pred)
 
-optimizer = tf.keras.optimizers.Adam(learning_rate=2e-3)
+optimizer = tf.keras.optimizers.Adam(learning_rate=0.001, beta_1=0.5)
 
-def train_step(person_reprs, clothings, labels):
-    # Use gradient tape
-    pass
+@tf.function
+def train_step(x_batch_train, y_batch_train):
+    with tf.device('/device:GPU:0'):
+        # Open a GradientTape to record the operations run
+        # during the forward pass, which enables auto-differentiation.
+        with tf.GradientTape() as tape:
+
+            # Run the forward pass of the layer.
+            # The operations that the layer applies
+            # to its inputs are going to be recorded
+            # on the GradientTape.
+
+            # Name
+            # "input_pose"
+            # "input_body_mask"
+            # "input_face_hair"
+            # "input_cloth"
+            # "output_image"
+            # "output_cloth_mask"
+            logits_human, logits_mask = model([x_batch_train], training=True)  # Logits for this minibatch
+
+            # Compute the loss value for this minibatch.
+            loss_value = loss_function(y_batch_train["output_image"], logits_human)
+            loss_mask_value = mask_loss_function(y_batch_train["output_cloth_mask"], logits_mask)
+            loss = loss_value + loss_mask_value
+            # loss = loss_value
+            print(f"loss for this batch at step: {step + 1}: {loss }")
+
+        # Use the gradient tape to automatically retrieve
+        # the gradients of the trainable variables with respect to the loss.
+        grads = tape.gradient(loss, model.trainable_weights)
+
+        # Run one step of gradient descent by updating
+        # the value of the variables to minimize the loss.
+        optimizer.apply_gradients(zip(grads, model.trainable_weights))
+
+    return logits_human, logits_mask
 
 # %%
-from core.models import *
-model = get_simple_unet_model()
+
+model = get_very_simple_unet_model()
 
 # %%
 
 model.summary()
+# Checkpoint path
+checkpoint_path = "models/checkpoints/viton_12.ckpt"
+# checkpoint_dir = os.path.dirname(checkpoint_path)
+if os.path.exists("models/checkpoints/viton_12.ckpt.index"):
+    model.load_weights(checkpoint_path)
+    print("Weights loaded!")
 
 
 # %%
 
-# Checkpoint path
-
-checkpoint_path = "models/checkpoints/viton_2.ckpt"
-# checkpoint_dir = os.path.dirname(checkpoint_path)
-if os.path.exists(checkpoint_path):
-    model.load_weights(checkpoint_path)
 # Training the model
 
 EPOCHS = 1
+STEP_PER_EPOCHS = 100
+# print(f"Dataset steps per epochs: {len(train_batch_ds) // BATCH_SIZE}")
 with tf.device('/device:CPU:0'):
     for epoch in range(EPOCHS):
         print("\nStart of epoch %d" % (epoch + 1,))
 
         # Iterate over the batches of the dataset.
         for step, (x_batch_train, y_batch_train) in enumerate(train_batch_ds.take(STEP_PER_EPOCHS)):
-
-            # Open a GradientTape to record the operations run
-            # during the forward pass, which enables auto-differentiation.
-            with tf.GradientTape() as tape, tf.device('/device:GPU:0'):
-
-                # Run the forward pass of the layer.
-                # The operations that the layer applies
-                # to its inputs are going to be recorded
-                # on the GradientTape.
-
-                # Name
-                # "input_body_repr"
-                # "input_cloth"
-                # "output_image"
-                # "output_cloth_mask"
-                logits_human, logits_mask = model([x_batch_train], training=True)  # Logits for this minibatch
-                show_img(logits_human[0])
-                show_img(logits_mask[0])
-                # Compute the loss value for this minibatch.
-                loss_value = loss_function(y_batch_train["output_image"], logits_human)
-                loss_mask_value = mask_loss_function(y_batch_train["output_cloth_mask"], logits_mask)
-                loss = loss_value + loss_mask_value
-                print(f"loss for this batch at step: {step + 1}: {loss }")
-
-            # Use the gradient tape to automatically retrieve
-            # the gradients of the trainable variables with respect to the loss.
-            grads = tape.gradient(loss, model.trainable_weights)
-
-            # Run one step of gradient descent by updating
-            # the value of the variables to minimize the loss.
-            optimizer.apply_gradients(zip(grads, model.trainable_weights))
-
+            logits_human, logits_mask = train_step(x_batch_train, y_batch_train)
+            if step % 20 == 0:
+                display.clear_output(wait=True)
+                print(f"Epoch {epoch + 1}, step {step + 1}:")
+                print("Input cloth:")
+                show_img(deprocess_img(x_batch_train["input_cloth"][0]))
+                print("Predictions:")
+                show_img(deprocess_img(logits_human[0]))
+                show_img(create_mask(logits_mask[0]))
         # For each epoch, save checkpoint
         model.save_weights(checkpoint_path)
-
+        print("Checkpoint saved!")
             # Log every 200 batches.
             # if step % 200 == 0:
             #     print(
@@ -654,13 +635,13 @@ with tf.device('/device:CPU:0'):
 
 # %%
 
-model.save('models/viton-mbv2-10epochs')
+model.save('models/viton-unet-30epochs')
 
 # %%
 
 # eval
 
-sample_input_batch, sample_output_batch = next(iter(train_batch_ds.take(1)))
+sample_input_batch, sample_output_batch = next(it_batch)
 
 #%%
 
@@ -668,19 +649,19 @@ sample_input_batch, sample_output_batch = next(iter(train_batch_ds.take(1)))
 r = np.random.randint(0, BATCH_SIZE - 1)
 
 print("Input: ")
-show_img(sample_input_batch["input_body_repr"][r,:,:,0:3])
-show_img(sample_input_batch["input_body_repr"][r,:,:,3])
-show_img(sample_input_batch["input_body_repr"][r,:,:,4:7])
-show_img(sample_input_batch["input_cloth"])
+show_img(deprocess_img(sample_input_batch["input_pose"][r]))
+show_img(deprocess_img(sample_input_batch["input_body_mask"][r]))
+show_img(deprocess_img(sample_input_batch["input_face_hair"][r]))
+show_img(deprocess_img(sample_input_batch["input_cloth"][r]))
 
 print('label:')
-show_img(sample_output_batch["output_image"][r])
-show_img(sample_output_batch["output_cloth_mask"][r])
+show_img(deprocess_img(sample_output_batch["output_image"][r]))
+show_img(deprocess_img(sample_output_batch["output_cloth_mask"][r]))
 
 print('pred:')
 pred_img, pred_cloth = model([sample_input_batch])
-show_img(pred_img[r])
-show_img(pred_cloth[r])
+show_img(deprocess_img(pred_img[r]))
+show_img(create_mask(pred_cloth[r]))
 
 # %%
 
