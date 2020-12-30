@@ -10,6 +10,7 @@ from PIL import Image
 import math
 import os
 import re
+from IPython import display
 
 import tensorflow as tf
 from tensorflow.keras.preprocessing import image_dataset_from_directory
@@ -60,7 +61,7 @@ LABEL_NAME_LIST = ['body_mask', 'face_hair', 'clothing_mask', 'pose']
 LABEL_FOLDER_PATH = [DATASET_OUT_PATH / d for d in LABEL_NAME_LIST]
 
 BATCH_SIZE = 8
-STEP_PER_EPOCHS = 20
+
 IMG_SHAPE = (256, 192, 3)
 
 MASK_THRESHOLD = 0.9
@@ -243,7 +244,8 @@ show_img(deprocess_img(sample_pose))
 sample_body_mask =  preprocess_image(
     tf.expand_dims(np.asarray(Image.open(LABEL_FOLDER_PATH[0] / TRAIN_PATH[r,0])), axis=2),
     IMG_SHAPE[:2],
-    resize_method=tf.image.ResizeMethod.NEAREST_NEIGHBOR
+    resize_method=tf.image.ResizeMethod.NEAREST_NEIGHBOR,
+    tanh_range=False
 )
 print(f"Min val: {tf.reduce_min(sample_body_mask)}, max val: {tf.reduce_max(sample_body_mask)}")
 show_img(deprocess_img(sample_body_mask))
@@ -260,7 +262,8 @@ show_img(deprocess_img(sample_face_hair))
 sample_clothing_mask = preprocess_image(
     tf.expand_dims(np.asarray(Image.open(LABEL_FOLDER_PATH[2] / TRAIN_PATH[r,1])), axis=2),
     IMG_SHAPE[:2],
-    resize_method=tf.image.ResizeMethod.NEAREST_NEIGHBOR
+    resize_method=tf.image.ResizeMethod.NEAREST_NEIGHBOR,
+    tanh_range=False
 )
 print(f"Min val: {tf.reduce_min(sample_clothing_mask)}, max val: {tf.reduce_max(sample_clothing_mask)}")
 show_img(deprocess_img(sample_clothing_mask))
@@ -348,13 +351,16 @@ def train_generator():
             np.asarray(Image.open(LABEL_FOLDER_PATH[3] / img_path)),
             IMG_SHAPE[:2]
         )
+        if tf.reduce_max(sample_pose) == -1.0:
+            continue
         # show_img(sample_pose)
 
         # sample_body_mask shape (256, 192, 1).
         sample_body_mask =  preprocess_image(
             tf.expand_dims(np.asarray(Image.open(LABEL_FOLDER_PATH[0] / img_path)), axis=2),
             IMG_SHAPE[:2],
-            resize_method=tf.image.ResizeMethod.NEAREST_NEIGHBOR
+            resize_method=tf.image.ResizeMethod.NEAREST_NEIGHBOR,
+            tanh_range=False
         )
         # show_img(sample_body_mask)
 
@@ -369,7 +375,8 @@ def train_generator():
         sample_clothing_mask = preprocess_image(
             tf.expand_dims(np.asarray(Image.open(LABEL_FOLDER_PATH[2] / cloth_path)), axis=2),
             IMG_SHAPE[:2],
-            resize_method=tf.image.ResizeMethod.NEAREST_NEIGHBOR
+            resize_method=tf.image.ResizeMethod.NEAREST_NEIGHBOR,
+            tanh_range=False
         )
         # show_img(sample_clothing_mask)
 
@@ -399,9 +406,9 @@ train_ds = tf.data.Dataset.from_generator(
         }
     )
 )
-train_batch_ds = train_ds.batch(BATCH_SIZE)
+train_batch_ds = train_ds.shuffle(1000).batch(BATCH_SIZE)
 it = iter(train_ds)
-
+it_batch = iter(train_batch_ds)
 # %%
 
 # test dataset
@@ -535,25 +542,60 @@ def loss_function(real, pred):
 def mask_loss_function(real, pred):
     # L1 loss
     # return tf.reduce_mean(tf.keras.losses.BinaryCrossentropy()(real,pred))
-    return 1.0 * compute_mse_loss(real, pred)
+    # return 1.0 * compute_mse_loss(real, pred)
+    return 1.0 * tf.keras.losses.SparseCategoricalCrossentropy()(real, pred)
 
 optimizer = tf.keras.optimizers.Adam(learning_rate=0.001, beta_1=0.5)
 
-def train_step(person_reprs, clothings, labels):
-    # Use gradient tape
-    pass
+@tf.function
+def train_step(x_batch_train, y_batch_train):
+    with tf.device('/device:GPU:0'):
+        # Open a GradientTape to record the operations run
+        # during the forward pass, which enables auto-differentiation.
+        with tf.GradientTape() as tape:
+
+            # Run the forward pass of the layer.
+            # The operations that the layer applies
+            # to its inputs are going to be recorded
+            # on the GradientTape.
+
+            # Name
+            # "input_pose"
+            # "input_body_mask"
+            # "input_face_hair"
+            # "input_cloth"
+            # "output_image"
+            # "output_cloth_mask"
+            logits_human, logits_mask = model([x_batch_train], training=True)  # Logits for this minibatch
+
+            # Compute the loss value for this minibatch.
+            loss_value = loss_function(y_batch_train["output_image"], logits_human)
+            loss_mask_value = mask_loss_function(y_batch_train["output_cloth_mask"], logits_mask)
+            loss = loss_value + loss_mask_value
+            # loss = loss_value
+            print(f"loss for this batch at step: {step + 1}: {loss }")
+
+        # Use the gradient tape to automatically retrieve
+        # the gradients of the trainable variables with respect to the loss.
+        grads = tape.gradient(loss, model.trainable_weights)
+
+        # Run one step of gradient descent by updating
+        # the value of the variables to minimize the loss.
+        optimizer.apply_gradients(zip(grads, model.trainable_weights))
+
+    return logits_human, logits_mask
 
 # %%
 
-model = get_res_unet_model()
+model = get_very_simple_unet_model()
 
 # %%
 
 model.summary()
 # Checkpoint path
-checkpoint_path = "models/checkpoints/viton_9.ckpt"
+checkpoint_path = "models/checkpoints/viton_12.ckpt"
 # checkpoint_dir = os.path.dirname(checkpoint_path)
-if os.path.exists("models/checkpoints/viton_9.ckpt.index"):
+if os.path.exists("models/checkpoints/viton_12.ckpt.index"):
     model.load_weights(checkpoint_path)
     print("Weights loaded!")
 
@@ -563,50 +605,23 @@ if os.path.exists("models/checkpoints/viton_9.ckpt.index"):
 # Training the model
 
 EPOCHS = 1
+STEP_PER_EPOCHS = 100
+# print(f"Dataset steps per epochs: {len(train_batch_ds) // BATCH_SIZE}")
 with tf.device('/device:CPU:0'):
     for epoch in range(EPOCHS):
         print("\nStart of epoch %d" % (epoch + 1,))
 
         # Iterate over the batches of the dataset.
-        for step, (x_batch_train, y_batch_train) in enumerate(train_batch_ds.shuffle(4).take(STEP_PER_EPOCHS)):
-
-            # Open a GradientTape to record the operations run
-            # during the forward pass, which enables auto-differentiation.
-            with tf.GradientTape() as tape, tf.device('/device:GPU:0'):
-
-                # Run the forward pass of the layer.
-                # The operations that the layer applies
-                # to its inputs are going to be recorded
-                # on the GradientTape.
-
-                # Name
-                # "input_pose"
-                # "input_body_mask"
-                # "input_face_hair"
-                # "input_cloth"
-                # "output_image"
-                # "output_cloth_mask"
-                logits_human, logits_mask = model([x_batch_train], training=True)  # Logits for this minibatch
+        for step, (x_batch_train, y_batch_train) in enumerate(train_batch_ds.take(STEP_PER_EPOCHS)):
+            logits_human, logits_mask = train_step(x_batch_train, y_batch_train)
+            if step % 20 == 0:
+                display.clear_output(wait=True)
+                print(f"Epoch {epoch + 1}, step {step + 1}:")
                 print("Input cloth:")
                 show_img(deprocess_img(x_batch_train["input_cloth"][0]))
                 print("Predictions:")
                 show_img(deprocess_img(logits_human[0]))
-                show_img(deprocess_img(logits_mask[0]))
-
-                # Compute the loss value for this minibatch.
-                loss_value = loss_function(y_batch_train["output_image"], logits_human)
-                loss_mask_value = mask_loss_function(y_batch_train["output_cloth_mask"], logits_mask)
-                loss = loss_value + loss_mask_value
-                print(f"loss for this batch at step: {step + 1}: {loss }")
-
-            # Use the gradient tape to automatically retrieve
-            # the gradients of the trainable variables with respect to the loss.
-            grads = tape.gradient(loss, model.trainable_weights)
-
-            # Run one step of gradient descent by updating
-            # the value of the variables to minimize the loss.
-            optimizer.apply_gradients(zip(grads, model.trainable_weights))
-
+                show_img(create_mask(logits_mask[0]))
         # For each epoch, save checkpoint
         model.save_weights(checkpoint_path)
         print("Checkpoint saved!")
@@ -620,13 +635,13 @@ with tf.device('/device:CPU:0'):
 
 # %%
 
-model.save('models/viton-mbv2-10epochs')
+model.save('models/viton-unet-30epochs')
 
 # %%
 
 # eval
 
-sample_input_batch, sample_output_batch = next(iter(train_batch_ds.take(1)))
+sample_input_batch, sample_output_batch = next(it_batch)
 
 #%%
 
@@ -646,7 +661,7 @@ show_img(deprocess_img(sample_output_batch["output_cloth_mask"][r]))
 print('pred:')
 pred_img, pred_cloth = model([sample_input_batch])
 show_img(deprocess_img(pred_img[r]))
-show_img(deprocess_img(pred_cloth[r]))
+show_img(create_mask(pred_cloth[r]))
 
 # %%
 

@@ -13,7 +13,8 @@ import random
 import tensorflow as tf
 from tensorflow.keras.preprocessing import image_dataset_from_directory
 import cv2
-
+from core.utils import *
+BATCH_SIZE = 32
 # TODO: Resize image using tf.image.ResizeMethod.NEAREST_NEIGHBOR
 
 print("Num GPUs Available: ", len(tf.config.experimental.list_physical_devices('GPU')))
@@ -210,17 +211,15 @@ def train_gen_single_parsing():
 
 def train_gen_multi_parsing():
     for file_name in TRAIN_NAME:
-        img = tf.convert_to_tensor(
-            np.asarray(
+        img = np.asarray(
                 Image.open(
                     TRAIN_INPUT_PATH / (file_name + INPUT_EXT)
                 )
-            ),
-            dtype=tf.float32)
-        if len(img.shape) != 3:
+            )
+        if len(img.shape) < 3:
             continue
-        resized_img = tf.keras.layers.experimental.preprocessing.Resizing(*IMG_SHAPE[:2])(img)
-        rescaled_img = tf.keras.layers.experimental.preprocessing.Rescaling(scale=1./255)(resized_img)
+        rescaled_img = preprocess_image(img)
+
         label = \
             np.expand_dims(
                 np.asarray(
@@ -231,23 +230,25 @@ def train_gen_multi_parsing():
                 ), axis=2
             )
         label = tf.convert_to_tensor(label, dtype=tf.float32)
-        resized_label = tf.keras.layers.experimental.preprocessing.Resizing(*PARSING_SHAPE[:2])(label)
+        resized_label = tf.image.resize(
+            label, 
+            IMG_SHAPE[:2],
+            method=tf.image.ResizeMethod.NEAREST_NEIGHBOR
+        )
         resized_label = tf.reshape(resized_label, PARSING_SHAPE)
         yield rescaled_img, resized_label
 
 def val_gen_multi_parsing():
     for file_name in VAL_NAME:
-        img = tf.convert_to_tensor(
-            np.asarray(
+        img = np.asarray(
                 Image.open(
                     VAL_INPUT_PATH / (file_name + INPUT_EXT)
                 )
-            ),
-            dtype=tf.float32)
-        if len(img.shape) != 3:
+            )
+        if len(img.shape) < 3:
             continue
-        resized_img = tf.keras.layers.experimental.preprocessing.Resizing(*IMG_SHAPE[:2])(img)
-        rescaled_img = tf.keras.layers.experimental.preprocessing.Rescaling(scale=1./255)(resized_img)
+        rescaled_img = preprocess_image(img)
+
         label = \
             np.expand_dims(
                 np.asarray(
@@ -258,7 +259,11 @@ def val_gen_multi_parsing():
                 ), axis=2
             )
         label = tf.convert_to_tensor(label, dtype=tf.float32)
-        resized_label = tf.keras.layers.experimental.preprocessing.Resizing(*PARSING_SHAPE[:2])(label)
+        resized_label = tf.image.resize(
+            label, 
+            IMG_SHAPE[:2],
+            method=tf.image.ResizeMethod.NEAREST_NEIGHBOR
+        )
         resized_label = tf.reshape(resized_label, PARSING_SHAPE)
         yield rescaled_img, resized_label
 
@@ -328,7 +333,7 @@ ds = tf.data.Dataset.from_generator(train_gen_multi_parsing, output_signature=(
 # Generator object
 train_gen_obs = train_gen_multi_parsing()
 it = iter(ds)
-batchs = ds.repeat().batch(20)
+batchs = ds.repeat().shuffle(1000).batch(BATCH_SIZE)
 batchs
 
 # %%
@@ -413,7 +418,7 @@ ds = tf.data.Dataset.from_generator(train_gen_single_parsing, output_signature=(
 batchs = ds.repeat().batch(20)
 
 # Train
-history = model.fit(batchs, steps_per_epoch=20, epochs=1)
+# history = model.fit(batchs, steps_per_epoch=20, epochs=1)
 
 
 # %%
@@ -469,7 +474,7 @@ ds = tf.data.Dataset.from_generator(train_gen_single_parsing, output_signature=(
 batchs = ds.repeat().batch(20)
 
 # Train
-history = model.fit(batchs, steps_per_epoch=20, epochs=1)
+# history = model.fit(batchs, steps_per_epoch=20, epochs=1)
 
 
 
@@ -540,18 +545,20 @@ train_ds = tf.data.Dataset.from_generator(train_gen_multi_parsing, output_signat
     tf.TensorSpec(shape=IMG_SHAPE, dtype=tf.float32),
     tf.TensorSpec(shape=PARSING_SHAPE, dtype=tf.float32)
 ))
-train_ds = train_ds.repeat().batch(20)
+train_ds = train_ds.repeat().batch(BATCH_SIZE)
 
 val_ds = tf.data.Dataset.from_generator(val_gen_multi_parsing, output_signature=(
     tf.TensorSpec(shape=IMG_SHAPE, dtype=tf.float32),
     tf.TensorSpec(shape=PARSING_SHAPE, dtype=tf.float32)
 ))
-val_ds = val_ds.repeat().batch(20)
+val_ds = val_ds.repeat().batch(BATCH_SIZE)
+
+# %%
 
 history = model.fit(
-    train_ds, 
-    steps_per_epoch=20, 
-    epochs=50, 
+    train_ds,
+    steps_per_epoch=1000, 
+    epochs=2, 
     validation_data=val_ds,
     validation_steps=10)
 # %%
@@ -612,7 +619,7 @@ lip_test = "./dataset/lip_mpv_dataset/MPV_192_256/ZX121DA0P/ZX121DA0P-K11@8=pers
 test_img = tf.convert_to_tensor(
     np.asarray(
         Image.open(
-            lip_test
+            lip_test2
         )
     )
 )
@@ -632,13 +639,13 @@ show_img(pred_mask)
 # Save model if you want to
 
 # Include the epoch in the file name (uses `str.format`)
-checkpoint_path = "checkpoints/human_parsing_mbv2-50epochs.ckpt"
+checkpoint_path = "checkpoints/human_parsing_mbv3-50epochs.ckpt"
 checkpoint_dir = os.path.dirname(checkpoint_path)
 
 model.save_weights(checkpoint_path)
 
 # Save the entire model
-model.save('models/human_parsing_mbv2-50epochs')
+model.save('models/human_parsing_mbv3-50epochs')
 
 # %%
 
@@ -850,7 +857,7 @@ with tqdm(total=TRAIN_PATH.shape[0]) as pbar:
         for i, name in enumerate(LABEL_FOLDER_PATH):
             if not os.path.exists(name / img_folder_name):
                 os.mkdir(name / img_folder_name)
-            if not os.path.exists(name / img_folder_name):
+            if not os.path.exists(name / cloth_folder_name):
                 os.mkdir(name / cloth_folder_name)
 
         sample_cloth = tf.image.resize(
