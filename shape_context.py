@@ -321,15 +321,25 @@ descriptor2 = computer.compute(points_pred)
 
 total, indexes = computer.diff(descriptor1, descriptor2)
 
-# %%
 
+# %%
+cnt = 0
+import collections
+hs = collections.defaultdict(int)
 for p1, p2 in indexes:
-    print(p1)
-    print(p2)
-    break
+    # print(f"{p1}, {p2}")
+    hs[p1] += 1
+    hs[p2] += 1
+    cnt += 1
 
-# %%
-descriptor.shape
+print(cnt)
+
+for k, v in hs.items():
+    if v > 2:
+        print(k)
+print(len(hs.keys()))
+
+
 
 
 
