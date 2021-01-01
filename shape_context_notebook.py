@@ -26,8 +26,8 @@ import math
 from scipy.spatial.distance import cdist, cosine
 from scipy.optimize import linear_sum_assignment
 import matplotlib.pyplot as plt
-import tensorflow as tf
 from IPython import display
+import collections
 import time
 
 from core.utils import *
@@ -49,7 +49,7 @@ def process_contour_cloth(img, threshold=0.992):
     ret, thresh = cv2.threshold(origray, 127, 255, 0)
     contours, hierarchy = cv2.findContours(thresh, cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
     mm = cv2.drawContours(tf.zeros_like(img).numpy(), contours, -1, (255,255,255), 3)
-    show_img(mm)
+    # show_img(mm)
     return contours, hierarchy
 
 def process_contour_actual(ori_img, threshold=0.92):
@@ -59,11 +59,11 @@ def process_contour_actual(ori_img, threshold=0.92):
     img[img > 0] = 1
     img *= 255.0
     img = img.astype('uint8')
-    print(img.shape)
+    # print(img.shape)
     # show_img(img)
     contours, hierarchy = cv2.findContours(img, cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
     mm = cv2.drawContours(tf.zeros_like(img).numpy(), contours, -1, (255,255,255), 3)
-    show_img(mm)
+    # show_img(mm)
     return contours, hierarchy
 
 def mask_background(img, threshold=0.992):
@@ -255,11 +255,167 @@ show_img(new_img)
 
 
 # Pipeline !
+# import tensorflow as tf
+from tqdm import tqdm
+from core.lip_dataset import train_generator, \
+    IMG_SHAPE, \
+    BATCH_SIZE, \
+    TRAIN_PATH as LIP_TRAIN, \
+    TEST_PATH as LIP_TEST, \
+    DATASET_PATH as LIP_PATH, \
+    DATASET_SRC as ORIGINAL_CLOTHS_FOLDER
 
+# # GPU config first
+# print("Num GPUs Available: ", len(tf.config.experimental.list_physical_devices('GPU')))
 
+# gpus = tf.config.experimental.list_physical_devices('GPU')
+# if gpus:
+#     # Restrict TensorFlow to only use the first GPU
+#     try:
+#         tf.config.experimental.set_visible_devices(gpus, 'GPU')
+#         # Set auto scale d
+#         tf.config.experimental.set_memory_growth(gpus[0], True)
+#         # Un comment this to manually set memory limit
+#         # tf.config.experimental.set_virtual_device_configuration(
+#         #     gpus[0],
+#         #     [tf.config.experimental.VirtualDeviceConfiguration(memory_limit=1024)])
+#         logical_gpus = tf.config.experimental.list_logical_devices('GPU')
+#         print(len(gpus), "Physical GPUs,", len(logical_gpus), "Logical GPU")
+#     except RuntimeError as e:
+#         # Visible devices must be set before GPUs have been initialized
+#         print(e)
 
+# %%
+computer = ShapeContext()
+def pipeline_step(original_cloth_path, actual_cloth_path):
+    """[summary]
 
+    Args:
+        original_cloth_path ([type]): [description]
+        actual_cloth_path ([type]): [description]
 
+    Returns:
+        cv image: shape(height, width, 3). BGR. Range 0-255. uint8
+    """
+    # Read image
+    cloth = cv2.imread(original_cloth_path, 1)
+    cnts_cloth, hierarchy = process_contour_cloth(cloth)
+
+    img = cv2.imread(actual_cloth_path, 0)
+    cnts_pred, hierarchy = process_contour_actual(img)
+
+    points_cloth = get_points(cnts_cloth, simpleto=60) # 100 x 2
+    points_pred = get_points(cnts_pred, simpleto=60) # 100 x 2
+
+    # # Draw points (Uncomment to debug)
+    # points_only, abc = draw_point(np.asarray(mask_background(cloth)), points_cloth)
+    # show_img(points_only / 255.0)
+    # points_only, abc = draw_point(np.asarray(mask_background(img)), points_pred)
+    # show_img(points_only / 255.0)
+
+    descriptor1 = computer.compute(points_cloth) # 100 x 60
+    descriptor2 = computer.compute(points_pred) # 100 x 60
+
+    total, indexes = computer.diff(descriptor1, descriptor2)
+
+    # Uncomment to debug
+    # cnt = 0
+    
+    hs = collections.defaultdict(int)
+    source = []
+    target = []
+    for p1, p2 in indexes:
+        source.append(points_cloth[p1].tolist())
+        target.append(points_pred[p2].tolist())
+
+        # Uncomment to debug
+        # hs[p1] += 1
+        # hs[p2] += 1
+        # cnt += 1
+
+    # Uncomment to debug
+    # print(f"Number of matching pairs of points: {cnt}")
+    # for k, v in hs.items():
+    #     if v > 2:
+    #         print(k)
+    # print(f"Number of unique indices: {len(hs.keys())}")
+
+    # uncomment to see the visualization
+    # for i, ([sx, sy], [tx, ty]) in enumerate(zip(source, target)):
+    #     display.clear_output(wait=True)
+    #     print(f"[{sx}, {sy}] -- [{tx}, {ty}]")
+    #     # Draw points
+    #     points_only, abc = draw_point(np.asarray(mask_background(cloth)), source[:i + 1])
+    #     show_img(points_only / 255.0)
+    #     points_only, abc = draw_point(np.asarray(mask_background(img)), target[:i + 1])
+    #     show_img(points_only / 255.0)
+    #     time.sleep(0.1)
+
+    tps = cv2.createThinPlateSplineShapeTransformer()
+
+    # Cartesian metrics
+    source = np.asarray(source, dtype=np.int32)
+    target = np.asarray(target, dtype=np.int32)
+
+    source = source.reshape(-1, len(source),2)
+    target = target.reshape(-1, len(target),2)
+
+    matches = list()
+    for i in range(0,len(source[0])):
+        matches.append(cv2.DMatch(i,i,0))
+
+    tps.estimateTransformation(target, source, matches)
+    # ret, tshape  = tps.applyTransformation(source)
+
+    prep_cloth = mask_background(cloth)
+    new_img = tps.warpImage(prep_cloth)
+
+    return new_img # some shape. range [0 - 255]
+
+# %%
+
+# Test pipeline
+sample_actual_cloth_path = "./dataset/lip_mpv_dataset/preprocessed/clothing_mask/ZX121EA0A/ZX121EA0A-N11@10=cloth_front.jpg"
+sample_original_cloth_path = "./dataset/lip_mpv_dataset/MPV_192_256/ZX121EA0A/ZX121EA0A-N11@10=cloth_front.jpg"
+new_img = pipeline_step(sample_original_cloth_path, sample_actual_cloth_path)
+
+# %%
+new_img.shape
+
+# %%
+
+# ORIGINAL_CLOTHS_FOLDER = get from lip_dataset.py
+ACTUAL_CLOTHS_FOLDER = LIP_PATH / "preprocessed" / "clothing_mask"
+
+OUT_FOLDER = LIP_PATH / "preprocessed" / "tps"
+if not os.path.exists(OUT_FOLDER):
+    os.mkdir(OUT_FOLDER)
+r_str = r"\/.*\.jpg$"
+# loop O(n^4)
+# Loop through all cloth paths
+with tqdm(total=LIP_TRAIN.shape[0]) as pbar:
+    for p in LIP_TRAIN[:, 1]:
+        try:
+            original_cloth_path = str(ORIGINAL_CLOTHS_FOLDER / p)
+            actual_cloth_path = str(ACTUAL_CLOTHS_FOLDER / p)
+            # new_img: cv image: shape(height, width, 3). BGR. Range 0-255. uint8
+            new_img = pipeline_step(original_cloth_path, actual_cloth_path)
+            # Write img to folder
+
+            # Eg: img path is raw. I.e: does not contains the full path (dataset/lip_mpv_dataset/preprocessed)
+            # img_path: RE321D05M\RE321D05M-Q11@8=person_half_front.jpg
+            # img_path_name: RE321D05M-Q11@8=person_half_front.jpg
+            # img_folder_name: RE321D05M
+            img_path_name = re.findall(r_str, p)[0]
+            img_folder_name = p[:(len(p) - len(img_path_name))]
+            if not os.path.exists(OUT_FOLDER / img_folder_name):
+                os.mkdir(OUT_FOLDER / img_folder_name)
+            cv2.imwrite(str(OUT_FOLDER / p), new_img) 
+        except:
+            continue
+        pbar.update(1)
+
+    
 
 
 
