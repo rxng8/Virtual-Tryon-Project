@@ -319,11 +319,11 @@ hierarchy.shape
 
 # test for mask clothes
 
-cloth_mask_path = "./dataset/lip_mpv_dataset/preprocessed/clothing_mask/ZX121D004/ZX121D004-C11@10=cloth_front.jpg"
-mask_path = "./dataset/lip_mpv_dataset/MPV_192_256/ZX121D004/ZX121D004-C11@10=cloth_front.jpg"
+# cloth_mask_path = "./dataset/lip_mpv_dataset/preprocessed/clothing_mask/ZX121D004/ZX121D004-C11@10=cloth_front.jpg"
+# mask_path = "./dataset/lip_mpv_dataset/MPV_192_256/ZX121D004/ZX121D004-C11@10=cloth_front.jpg"
 
-# cloth_mask_path = "./dataset/lip_mpv_dataset/preprocessed/clothing_mask/ZX121EA0A/ZX121EA0A-N11@10=cloth_front.jpg"
-# mask_path = "./dataset/lip_mpv_dataset/MPV_192_256/ZX121EA0A/ZX121EA0A-N11@10=cloth_front.jpg"
+cloth_mask_path = "./dataset/lip_mpv_dataset/preprocessed/clothing_mask/ZX121EA0A/ZX121EA0A-N11@10=cloth_front.jpg"
+mask_path = "./dataset/lip_mpv_dataset/MPV_192_256/ZX121EA0A/ZX121EA0A-N11@10=cloth_front.jpg"
 
 cloth = cv2.imread(mask_path, 1)
 cnts_cloth, hierarchy = process_contour_cloth(cloth)
@@ -334,8 +334,8 @@ cnts_pred, hierarchy = process_contour_actual(img)
 
 # %%
 
-points_cloth = get_points(cnts_cloth, simpleto=50) # 100 x 2
-points_pred = get_points(cnts_pred, simpleto=50) # 100 x 2
+points_cloth = get_points(cnts_cloth, simpleto=60) # 100 x 2
+points_pred = get_points(cnts_pred, simpleto=60) # 100 x 2
 
 # Draw points
 points_only, abc = draw_point(np.asarray(mask_background(cloth)), points_cloth)
@@ -352,7 +352,7 @@ descriptor1 = computer.compute(points_cloth) # 100 x 60
 descriptor2 = computer.compute(points_pred) # 100 x 60
 
 total, indexes = computer.diff(descriptor1, descriptor2)
-
+print(total)
 # %%
 # Test point
 cnt = 0
@@ -412,7 +412,7 @@ for i in range(0,len(source[0])):
     matches.append(cv2.DMatch(i,i,0))
 
 tps.estimateTransformation(target, source, matches)
-
+ret, tshape  = tps.applyTransformation (source)
 # %%
 prep_cloth = mask_background(cloth)
 new_img = tps.warpImage(prep_cloth)
@@ -426,5 +426,15 @@ show_img(new_img)
 
 
 # %%
+
+
+# Pipeline !
+
+
+
+
+
+
+
 
 
