@@ -35,7 +35,7 @@ class ShapeContext(object):
         row_ind, col_ind = linear_sum_assignment(cost_matrix)
         total = cost_matrix[row_ind, col_ind].sum()
         indexes = zip(row_ind.tolist(), col_ind.tolist())
-        return total, indexes
+        return total, indexes, row_ind.tolist(), col_ind.tolist()
 
     def _cost(self, hi, hj):
         # Compute cost between two different points.

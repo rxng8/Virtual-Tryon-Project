@@ -92,6 +92,15 @@ def draw_point(img, points):
     return zeros, new_img
 
 def get_points(cnts, simpleto=100):
+    """
+
+    Args:
+        cnts ([type]): [description]
+        simpleto (int, optional): [description]. Defaults to 100.
+
+    Returns:
+        np.ndarray: array points. shape(simpleto, 2)
+    """
     # Expect contours got from cv2 contours
     mx = -1
     i_mx = -1
@@ -109,6 +118,97 @@ def get_points(cnts, simpleto=100):
     # points = [points[i % points.shape[0]].tolist() for i in range(0, points.shape[0] + simpleto, step)][:simpleto]
     points = [points[i].tolist() for i in range(0, points.shape[0], step)][:simpleto]
     return np.asarray(points)
+
+# Pipeline methods:
+def compute_indices(cnts_cloth, cnts_pred):
+    points_cloth = None
+    points_pred = None
+    min_cost = 1e8
+    indexes = None
+    init_source_id = None
+    init_target_id = None
+    for ori_n_points in range(40, 71, 10):
+        for act_n_points in range(50, 71, 10):
+            points_cloth_tmp = get_points(cnts_cloth, simpleto=ori_n_points) # 100 x 2
+            points_pred_tmp = get_points(cnts_pred, simpleto=act_n_points) # 100 x 2
+
+            descriptor1 = computer.compute(points_cloth_tmp) # 100 x 60
+            descriptor2 = computer.compute(points_pred_tmp) # 100 x 60
+
+            total, indexes_tmp, source_tmp_id, target_tmp_id = \
+                computer.diff(descriptor1, descriptor2)
+            # print(total)
+
+            if total < min_cost:
+                min_cost = total
+                points_cloth = points_cloth_tmp.copy()
+                points_pred = points_pred_tmp.copy()
+                # indexes = indexes_tmp.copy()
+                init_source_id = source_tmp_id.copy()
+                init_target_id = target_tmp_id.copy()
+    return min_cost, points_cloth, points_pred, init_source_id, init_target_id
+
+def get_match_points(
+    points_cloth, 
+    points_pred, 
+    init_source_id, 
+    init_target_id, 
+    dropout_rate=0.2,
+    verbose=False):
+
+    cnt = 0
+
+    hs = collections.defaultdict(int)
+    source = []
+    target = []
+    for p1, p2 in zip(init_source_id, init_target_id):
+        if np.random.random() < dropout_rate:
+            continue
+        source.append(points_cloth[p1].tolist())
+        target.append(points_pred[p2].tolist())
+        hs[p1] += 1
+        hs[p2] += 1
+        cnt += 1
+    if verbose:
+        print(f"Number of matching pairs of points: {cnt}")
+
+        for k, v in hs.items():
+            if v > 2:
+                print(k)
+        print(f"Number of unique indices: {len(hs.keys())}")
+
+    return source, target
+
+# Plot matchh
+def plot_match(computer: ShapeContext, cnts_cloth, cnts_pred):
+
+    min_cost, points_cloth, points_pred, init_source_id, init_target_id = \
+        compute_indices(cnts_cloth, cnts_pred)
+
+    points1 = points_cloth
+    x1 = [p[1] for p in points1]
+    y1 = [p[0] for p in points1]
+    points2 = (np.array(points_pred)+50).tolist()
+    x2 = [p[1] for p in points2]
+    y2 = [p[0] for p in points2]
+
+    lines = []
+    for p,q in zip(init_source_id, init_target_id):
+        lines.append(((points1[p][1],points1[p][0]), (points2[q][1],points2[q][0])))
+    plt.figure(figsize=(15, 10))
+    ax = plt.subplot(121)
+    plt.gca().invert_yaxis()
+    plt.plot(y1,x1,'go', y2,x2, 'ro')
+
+    ax = plt.subplot(122)
+    plt.gca().invert_yaxis()
+    plt.plot(y1,x1,'go',y2,x2,'ro')
+    for p1,p2 in lines:   
+        plt.gca().invert_yaxis()
+        plt.plot((p1[1],p2[1]),(p1[0],p2[0]), 'k-')
+    plt.show()
+    # print("Cosine diff: {}".format(cosine(P.flatten(), Q.flatten())))
+    # print("Standard diff: {}".format(standard_cost))
 
 # %%
 # Test for original clothes
@@ -157,11 +257,14 @@ cnts_cloth, hierarchy = process_contour_cloth(cloth)
 img = cv2.imread(cloth_mask_path, 0)
 cnts_pred, hierarchy = process_contour_actual(img)
 
+computer = ShapeContext(r_outer=6.0)
 
 # %%
 
-points_cloth = get_points(cnts_cloth, simpleto=60) # 100 x 2
-points_pred = get_points(cnts_pred, simpleto=60) # 100 x 2
+min_cost, points_cloth, points_pred, init_source_id, init_target_id = \
+    compute_indices(cnts_cloth, cnts_pred)
+
+# %%
 
 # Draw points
 points_only, abc = draw_point(np.asarray(mask_background(cloth)), points_cloth)
@@ -172,33 +275,9 @@ points_only, abc = draw_point(np.asarray(mask_background(img)), points_pred)
 show_img(points_only / 255.0)
 
 # %%
-
-computer = ShapeContext()
-descriptor1 = computer.compute(points_cloth) # 100 x 60
-descriptor2 = computer.compute(points_pred) # 100 x 60
-
-total, indexes = computer.diff(descriptor1, descriptor2)
-print(total)
-# %%
 # getting the zipped source, target to 2 different array and count points
-cnt = 0
-import collections
-hs = collections.defaultdict(int)
-source = []
-target = []
-for p1, p2 in indexes:
-    source.append(points_cloth[p1].tolist())
-    target.append(points_pred[p2].tolist())
-    hs[p1] += 1
-    hs[p2] += 1
-    cnt += 1
 
-print(f"Number of matching pairs of points: {cnt}")
-
-for k, v in hs.items():
-    if v > 2:
-        print(k)
-print(f"Number of unique indices: {len(hs.keys())}")
+source, target = get_match_points(points_cloth, points_pred, init_source_id, init_target_id, verbose=True)
 
 # %%
 
@@ -206,6 +285,7 @@ print(f"Number of unique indices: {len(hs.keys())}")
 
 for i, ([sx, sy], [tx, ty]) in enumerate(zip(source, target)):
     display.clear_output(wait=True)
+    print(f"Min cost: {min_cost}")
     print(f"[{sx}, {sy}] -- [{tx}, {ty}]")
 
     # Draw points
@@ -216,8 +296,11 @@ for i, ([sx, sy], [tx, ty]) in enumerate(zip(source, target)):
     points_only, abc = draw_point(np.asarray(mask_background(img)), target[:i + 1])
     show_img(points_only / 255.0)
 
-    time.sleep(0.1)
+    time.sleep(0.01)
 
+# %%
+
+plot_match(computer, cnts_cloth, cnts_pred)
 
 # %%
 
@@ -236,9 +319,10 @@ target = target.reshape(-1, len(target),2)
 matches = list()
 for i in range(0,len(source[0])):
     matches.append(cv2.DMatch(i,i,0))
-
+tps.setRegularizationParameter(beta=0.9)
 tps.estimateTransformation(target, source, matches)
-ret, tshape  = tps.applyTransformation (source)
+# ret, tshape  = tps.applyTransformation (source)
+
 # %%
 prep_cloth = mask_background(cloth)
 new_img = tps.warpImage(prep_cloth)
@@ -253,7 +337,6 @@ show_img(new_img)
 
 # %%
 
-
 # Pipeline !
 # import tensorflow as tf
 from tqdm import tqdm
@@ -265,28 +348,8 @@ from core.lip_dataset import train_generator, \
     DATASET_PATH as LIP_PATH, \
     DATASET_SRC as ORIGINAL_CLOTHS_FOLDER
 
-# # GPU config first
-# print("Num GPUs Available: ", len(tf.config.experimental.list_physical_devices('GPU')))
+computer = ShapeContext(r_outer=6.0)
 
-# gpus = tf.config.experimental.list_physical_devices('GPU')
-# if gpus:
-#     # Restrict TensorFlow to only use the first GPU
-#     try:
-#         tf.config.experimental.set_visible_devices(gpus, 'GPU')
-#         # Set auto scale d
-#         tf.config.experimental.set_memory_growth(gpus[0], True)
-#         # Un comment this to manually set memory limit
-#         # tf.config.experimental.set_virtual_device_configuration(
-#         #     gpus[0],
-#         #     [tf.config.experimental.VirtualDeviceConfiguration(memory_limit=1024)])
-#         logical_gpus = tf.config.experimental.list_logical_devices('GPU')
-#         print(len(gpus), "Physical GPUs,", len(logical_gpus), "Logical GPU")
-#     except RuntimeError as e:
-#         # Visible devices must be set before GPUs have been initialized
-#         print(e)
-
-# %%
-computer = ShapeContext()
 def pipeline_step(original_cloth_path, actual_cloth_path):
     """[summary]
 
@@ -304,56 +367,15 @@ def pipeline_step(original_cloth_path, actual_cloth_path):
     img = cv2.imread(actual_cloth_path, 0)
     cnts_pred, hierarchy = process_contour_actual(img)
 
-    points_cloth = get_points(cnts_cloth, simpleto=60) # 100 x 2
-    points_pred = get_points(cnts_pred, simpleto=60) # 100 x 2
+    min_cost, points_cloth, points_pred, init_source_id, init_target_id = \
+        compute_indices(cnts_cloth, cnts_pred)
 
-    # # Draw points (Uncomment to debug)
-    # points_only, abc = draw_point(np.asarray(mask_background(cloth)), points_cloth)
-    # show_img(points_only / 255.0)
-    # points_only, abc = draw_point(np.asarray(mask_background(img)), points_pred)
-    # show_img(points_only / 255.0)
-
-    descriptor1 = computer.compute(points_cloth) # 100 x 60
-    descriptor2 = computer.compute(points_pred) # 100 x 60
-
-    total, indexes = computer.diff(descriptor1, descriptor2)
-
-    # Uncomment to debug
-    # cnt = 0
-    
-    hs = collections.defaultdict(int)
-    source = []
-    target = []
-    for p1, p2 in indexes:
-        source.append(points_cloth[p1].tolist())
-        target.append(points_pred[p2].tolist())
-
-        # Uncomment to debug
-        # hs[p1] += 1
-        # hs[p2] += 1
-        # cnt += 1
-
-    # Uncomment to debug
-    # print(f"Number of matching pairs of points: {cnt}")
-    # for k, v in hs.items():
-    #     if v > 2:
-    #         print(k)
-    # print(f"Number of unique indices: {len(hs.keys())}")
-
-    # uncomment to see the visualization
-    # for i, ([sx, sy], [tx, ty]) in enumerate(zip(source, target)):
-    #     display.clear_output(wait=True)
-    #     print(f"[{sx}, {sy}] -- [{tx}, {ty}]")
-    #     # Draw points
-    #     points_only, abc = draw_point(np.asarray(mask_background(cloth)), source[:i + 1])
-    #     show_img(points_only / 255.0)
-    #     points_only, abc = draw_point(np.asarray(mask_background(img)), target[:i + 1])
-    #     show_img(points_only / 255.0)
-    #     time.sleep(0.1)
-
-    tps = cv2.createThinPlateSplineShapeTransformer()
+    source, target = \
+        get_match_points(points_cloth, points_pred, init_source_id, init_target_id)
 
     # Cartesian metrics
+    tps = cv2.createThinPlateSplineShapeTransformer()
+
     source = np.asarray(source, dtype=np.int32)
     target = np.asarray(target, dtype=np.int32)
 
@@ -364,9 +386,9 @@ def pipeline_step(original_cloth_path, actual_cloth_path):
     for i in range(0,len(source[0])):
         matches.append(cv2.DMatch(i,i,0))
 
+    tps.setRegularizationParameter(beta=0.5)
     tps.estimateTransformation(target, source, matches)
-    # ret, tshape  = tps.applyTransformation(source)
-
+    
     prep_cloth = mask_background(cloth)
     new_img = tps.warpImage(prep_cloth)
 
@@ -381,7 +403,7 @@ new_img = pipeline_step(sample_original_cloth_path, sample_actual_cloth_path)
 
 # %%
 new_img.shape
-
+show_img(new_img)
 # %%
 
 # ORIGINAL_CLOTHS_FOLDER = get from lip_dataset.py
@@ -396,6 +418,9 @@ r_str = r"\/.*\.jpg$"
 with tqdm(total=LIP_TRAIN.shape[0]) as pbar:
     for p in LIP_TRAIN[:, 1]:
         try:
+            if os.path.exists(str(OUT_FOLDER / p)):
+                pbar.update(1)
+                continue
             original_cloth_path = str(ORIGINAL_CLOTHS_FOLDER / p)
             actual_cloth_path = str(ACTUAL_CLOTHS_FOLDER / p)
             # new_img: cv image: shape(height, width, 3). BGR. Range 0-255. uint8
@@ -410,13 +435,10 @@ with tqdm(total=LIP_TRAIN.shape[0]) as pbar:
             img_folder_name = p[:(len(p) - len(img_path_name))]
             if not os.path.exists(OUT_FOLDER / img_folder_name):
                 os.mkdir(OUT_FOLDER / img_folder_name)
-            cv2.imwrite(str(OUT_FOLDER / p), new_img) 
+            cv2.imwrite(str(OUT_FOLDER / p), new_img)
         except:
+            pbar.update(1)
             continue
         pbar.update(1)
-
-    
-
-
-
-
+        
+# %%
