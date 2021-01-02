@@ -64,11 +64,17 @@ constrain the synthesis process.
 
 <br>
 
-4. Results of the VITON networks:
+4. Results of the first phase VITON networks:
 
 <div style = "text-align:center;">
   <img src="./doc/sample_label.png" width="130" />
   <img src="./doc/sample_prediction.png" width="130" />
+</div>
+
+5. Shape Context Matching and TPS Wraping:
+
+<div style = "text-align:center;">
+  <img src="./doc/shape_context_match.png" width="200" />
 </div>
 
 ## Installation
