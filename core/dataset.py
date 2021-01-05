@@ -246,3 +246,7 @@ class ATRDataset(Dataset):
         it = iter(dataset)
         return it
     
+    def get_tf_test_dataset_iter(self):
+        dataset = self.get_tf_dataset(dataset='test')
+        it = iter(dataset)
+        return it
