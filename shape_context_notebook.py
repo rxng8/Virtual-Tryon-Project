@@ -15,11 +15,6 @@ Visualization:
 
 # %%
 
-"""
-This code is taken and modified from this url:
-    https://github.com/creotiv/computer_vision/blob/master/shape_context/shape_context.py
-"""
-
 import numpy as np
 import cv2
 import math
@@ -277,7 +272,14 @@ show_img(points_only / 255.0)
 # %%
 # getting the zipped source, target to 2 different array and count points
 
-source, target = get_match_points(points_cloth, points_pred, init_source_id, init_target_id, verbose=True)
+source, target = get_match_points(
+    points_cloth, 
+    points_pred, 
+    init_source_id, 
+    init_target_id, 
+    verbose=True,
+    dropout_rate=0.5
+)
 
 # %%
 
@@ -319,7 +321,7 @@ target = target.reshape(-1, len(target),2)
 matches = list()
 for i in range(0,len(source[0])):
     matches.append(cv2.DMatch(i,i,0))
-tps.setRegularizationParameter(beta=0.9)
+tps.setRegularizationParameter(beta=0.2)
 tps.estimateTransformation(target, source, matches)
 # ret, tshape  = tps.applyTransformation (source)
 
@@ -375,7 +377,7 @@ def pipeline_step(original_cloth_path, actual_cloth_path):
         compute_indices(cnts_cloth, cnts_pred)
 
     source, target = \
-        get_match_points(points_cloth, points_pred, init_source_id, init_target_id)
+        get_match_points(points_cloth, points_pred, init_source_id, init_target_id, dropout_rate=0.3)
 
     # Cartesian metrics
     tps = cv2.createThinPlateSplineShapeTransformer()
