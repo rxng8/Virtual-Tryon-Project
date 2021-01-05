@@ -1,9 +1,3 @@
-
-"""
-This code is taken and modified from this url:
-    https://github.com/creotiv/computer_vision/blob/master/shape_context/shape_context.py
-"""
-
 import numpy as np
 import cv2
 import math
@@ -15,6 +9,10 @@ from .utils import *
 
 
 class ShapeContext(object):
+    """
+    This code is taken and modified from this url:
+        https://github.com/creotiv/computer_vision/blob/master/shape_context/shape_context.py
+    """
 
     def __init__(self, nbins_r=5, nbins_theta=12, r_inner=0.1250, r_outer=2.0):
         # number of radius zones
