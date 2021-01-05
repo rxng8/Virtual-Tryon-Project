@@ -145,10 +145,14 @@ def load_image(path):
     return np.asarray(Image.open(path))
 
 
-def plot_parsing_map(test_predict):
-    # Test pred shape 4d
+def plot_parsing_map(test_predict, label2int=LABEL_NAME):
+    # Test pred shape 3d or 4d
     # mask is shape (256, 192, 1). Range[0, 19]
-    mask = create_mask(test_predict)[0]
+    mask = None
+    if len(test_predict.shape) == 4:
+        mask = create_mask(test_predict)[0]
+    else:
+        mask = create_mask(test_predict)
     width=15
     height=10
     rows = 4
@@ -156,7 +160,7 @@ def plot_parsing_map(test_predict):
     axes=[]
     fig=plt.figure(figsize=(width, height))
 
-    for i, (label_name, label_channel) in enumerate(LABEL_NAME.items()):
+    for i, (label_name, label_channel) in enumerate(label2int.items()):
         
         axes.append(fig.add_subplot(rows, cols, i+1))
         subplot_title=(label_name)
