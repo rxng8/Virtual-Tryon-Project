@@ -348,6 +348,10 @@ from core.lip_dataset import train_generator, \
     DATASET_PATH as LIP_PATH, \
     DATASET_SRC as ORIGINAL_CLOTHS_FOLDER
 
+# ORIGINAL_CLOTHS_FOLDER = get from lip_dataset.py
+ACTUAL_CLOTHS_FOLDER = LIP_PATH / "preprocessed" / "clothing_mask"
+OUT_FOLDER = LIP_PATH / "preprocessed" / "tps"
+
 computer = ShapeContext(r_outer=6.0)
 
 def pipeline_step(original_cloth_path, actual_cloth_path):
@@ -406,10 +410,7 @@ new_img.shape
 show_img(new_img)
 # %%
 
-# ORIGINAL_CLOTHS_FOLDER = get from lip_dataset.py
-ACTUAL_CLOTHS_FOLDER = LIP_PATH / "preprocessed" / "clothing_mask"
 
-OUT_FOLDER = LIP_PATH / "preprocessed" / "tps"
 if not os.path.exists(OUT_FOLDER):
     os.mkdir(OUT_FOLDER)
 r_str = r"\/.*\.jpg$"
@@ -442,3 +443,22 @@ with tqdm(total=LIP_TRAIN.shape[0]) as pbar:
         pbar.update(1)
         
 # %%
+
+# random comparison
+import random
+
+def random_compare():
+    r = random.randint(0, LIP_TRAIN.shape[0] - 1)
+    img = np.asarray(Image.open(str(ORIGINAL_CLOTHS_FOLDER / LIP_TRAIN[r, 1])))
+    show_img(img)
+    del img
+    img = np.asarray(Image.open(str(ACTUAL_CLOTHS_FOLDER / LIP_TRAIN[r, 1])))
+    show_img(img)
+    del img
+    img = np.asarray(Image.open(str(OUT_FOLDER / LIP_TRAIN[r, 1])))
+    show_img(img)
+    
+
+# %%
+
+random_compare()
