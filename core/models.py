@@ -13,7 +13,6 @@ from tensorflow_examples.models.pix2pix import pix2pix
 import tensorflow as tf
 from tensorflow.keras.preprocessing import image_dataset_from_directory
 import cv2
-
 import mediapipe as mp
 
 from .utils import *
@@ -407,6 +406,63 @@ def get_very_simple_unet_model():
     model = tf.keras.Model(
         [inputs_pose, inputs_body_mask, inputs_face_hair, inputs_cloth], 
         [outputs1, outputs2]
+    )
+
+    return model
+
+def get_unet_model_for_human_parsing(input_shape, output_channels):
+    # This is the U-net model
+
+    """
+    Read this u-net article with the cute meow:
+        https://towardsdatascience.com/u-net-b229b32b4a71
+    """
+
+    mobile_net_model = tf.keras.applications.MobileNetV2(
+        input_shape=input_shape, 
+        include_top=False)
+    mobile_net_model.trainable = False
+    # Use the activations of these layers
+    layer_names = [
+        'block_1_expand_relu',   # 128x96
+        'block_3_expand_relu',   # 64x48
+        'block_6_expand_relu',   # 32x24
+        'block_13_expand_relu',  # 16x12
+        'block_16_project',      # 8x6
+    ]
+    layers = [mobile_net_model.get_layer(name).output for name in layer_names]
+
+    # Create the feature extraction model
+    wrap_mobile_net_model = tf.keras.Model(inputs=mobile_net_model.input, outputs=layers)
+    wrap_mobile_net_model.trainable = False
+
+    inputs = tf.keras.Input(shape=IMG_SHAPE)
+    out4, out3, out2, out1, out0 = wrap_mobile_net_model(inputs, training=False)
+
+    up1_tensor = pix2pix.upsample(512, 3)(out0)
+
+    cat1_tensor = tf.keras.layers.concatenate([up1_tensor, out1])
+    up2_tensor = pix2pix.upsample(256, 3)(cat1_tensor)
+
+    cat2_tensor = tf.keras.layers.concatenate([up2_tensor, out2])
+    up3_tensor = pix2pix.upsample(128, 3)(cat2_tensor)
+
+    cat3_tensor = tf.keras.layers.concatenate([up3_tensor, out3])
+    up4_tensor = pix2pix.upsample(64, 3)(cat3_tensor)
+
+    cat4_tensor = tf.keras.layers.concatenate([up4_tensor, out4])
+
+    # There are 20 integer category (not one-hot-encoded), so, n channels (or neurons, or feature vectors) is 20
+    out = tf.keras.layers.Conv2DTranspose(
+        output_channels, 3, strides=2,
+        padding='same'
+    ) (cat4_tensor)
+
+    model = tf.keras.Model(inputs, out)
+    model.summary()
+    model.compile(
+        loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
+        metrics=['acc']
     )
 
     return model
