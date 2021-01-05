@@ -84,7 +84,10 @@ constrain the synthesis process.
   * Install python dependency packages: `pip install -r requirements.txt` 
   * Download the dataset:
     * [Look into person dataset](https://drive.google.com/file/d/1mLHY6m24jkPlCze_TUJvbU9BoXAedGs9/view): This dataset is the clothing dataset for the main virtual try-on task.
+    * [ATR Dataset](https://drive.google.com/drive/folders/1_RR7FZpnPFIV5gtjLydV0MelI_N1gywW?usp=sharing): ATR dataset. [Label](https://github.com/lemondan/HumanParsing-Dataset/blob/master/atr_label.txt)
+    * [Multi Parse Human Dataset](https://drive.google.com/file/d/1hTS8QJBuGdcppFAr_bvW2tsD9hW_ptr5/view): MPH
     * [Human Parsing dataset](https://drive.google.com/drive/folders/1ZjNrTb7T_SsOdck76qDcd5OHkFEU0C6Q): This is the dataset for training human parsing task, in order to create human representation.
+    * [Pascal Person Part Dataset](http://liangchiehchen.com/data/pascal_person_part.zip): Pascal-personpart dataset
     * [Fashionista Dataset](http://vision.is.tohoku.ac.jp/~kyamagu/research/clothing_parsing/): The dataset for segmenting clothes and body pose.
     * [Deep Fashion](https://github.com/switchablenorms/DeepFashion2): Deep fashion dataset. <!--Pass to unpack zip: 2019Deepfashion2** -->
   * Finally, when you are running the notebook, try to config the right path to the dataset.
