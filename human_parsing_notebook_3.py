@@ -8,7 +8,7 @@ You can look through this paper also, it's about Deeplab and ASPP Net:
 This file is the implementation of this paper, which is about CE2P Net:
     https://arxiv.org/pdf/1809.05996.pdf
 
-Then read this article that talks about Augmented-CE2P Net:
+Then read this article that talks about Augmented-CE2P Net (SCHP):
     https://arxiv.org/pdf/1910.09777.pdf
 
 Lovasz Softmax loss:

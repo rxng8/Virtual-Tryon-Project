@@ -1,7 +1,8 @@
 # %%
 
 """
-This notebook is for the atr dataset training
+This notebook is for the atr dataset training.
+
 """
 
 from PIL import Image
@@ -86,6 +87,19 @@ def test_random_prediction(model, test_it, batch_size, label2int):
 # %%
 
 test_random_prediction(model, test_it, BATCH_SIZE, ATRDataset.LABEL2INT)
+
+
+
+
+
+# %%
+
+"""
+Next, we try to improve our models with this paper:
+    https://arxiv.org/pdf/1910.09777v1.pdf
+"""
+
+
 
 
 # %%
