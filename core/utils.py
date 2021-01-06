@@ -111,6 +111,8 @@ def preprocess_image(
         resize_method=tf.image.ResizeMethod.BILINEAR,
         tanh_range=True
     ) -> tf.Tensor:
+    if len(img.shape) == 2:
+        img = tf.expand_dims(img, axis=-1)
     # Expect range 0 - 255
     resized = tf.image.resize(
         img, 
@@ -123,6 +125,22 @@ def preprocess_image(
     # Convert to BGR
     bgr = rescaled[..., ::-1]
     return bgr
+
+def preprocess_mask(
+    img: np.ndarray, 
+    shape=(256, 192),
+    resize_method=tf.image.ResizeMethod.NEAREST_NEIGHBOR,
+    sigmoid_range=True
+) -> tf.Tensor:
+    # Expect range 0 - 255
+    resized = tf.image.resize(
+        img, 
+        shape,
+        method=resize_method
+    )
+    if sigmoid_range and tf.reduce_max(resized) > 1:
+        resized = tf.cast(resized, dtype=float) / 255.0
+    return resized
 
 def deprocess_img(img):
     # Expect img range [-1, 1]
@@ -179,6 +197,34 @@ def get_pose_map(path) -> np.ndarray:
     Returns:
         np.ndarray: [description]
     """
+    pose = mp_pose.Pose(static_image_mode=True, min_detection_confidence=0.5)
+    # Read an image, flip it around y-axis for correct handedness output (see
+    # above).
+    image = cv2.imread(path) # range 0 - 255. 3d
+    image = cv2.resize(image, IMG_SHAPE[:2][::-1],fx=1, fy=1, interpolation=cv2.INTER_CUBIC)
+    # Convert the BGR image to RGB before processing.
+    results = pose.process(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
+    image_height, image_width, channels = image.shape
+    annotated_image = np.zeros((image_height, image_width, channels))
+    if not results.pose_landmarks:
+        return annotated_image
+    mp_drawing.draw_landmarks(
+        annotated_image, 
+        results.pose_landmarks)
+    pose.close()
+    # return preprocess_image(np.asarray(annotated_image))
+    return tf.cast(annotated_image, dtype=tf.int32)
+
+
+def get_hand_pose_map(path) -> np.ndarray:
+    """ given a path, return a pose map
+
+    Args:
+        img (np.ndarray): 
+
+    Returns:
+        np.ndarray: [description]
+    """
     hands = mp_hands.Hands(
         static_image_mode=True,
         max_num_hands=2,
@@ -193,7 +239,7 @@ def get_pose_map(path) -> np.ndarray:
     results = hands.process(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
 
     # Print handedness and draw hand landmarks on the image.
-    print('Handedness:', results.multi_handedness)
+    # print('Handedness:', results.multi_handedness)
     
     image_height, image_width, channels = image.shape
     annotated_image = image.copy()
