@@ -464,3 +464,30 @@ def random_compare():
 # %%
 
 random_compare()
+
+
+# %%
+
+"""
+Problem with TPS in Virtual try on:
+    https://khanhha.github.io/posts/Problems-In-Using-Thin-Plate-Spline-For-Virtual-Try-On/
+    https://khanhha.github.io/posts/Image-based-Virtual-Try-On-Network-Part-1/
+
+About wrap net:
+    https://cseweb.ucsd.edu/~mkchandraker/pdf/cvpr16_warpnet.pdf
+
+About TPS in all papers (check related work of this paper):
+    https://arxiv.org/pdf/1902.11026v1.pdf
+    https://openaccess.thecvf.com/content_CVPR_2020/papers/Yang_Towards_Photo-Realistic_Virtual_Try-On_by_Adaptively_Generating-Preserving_Image_Content_CVPR_2020_paper.pdf
+
+CP-VTON(+) use a network to estimate TPS parameters:
+    https://minar09.github.io/cpvtonplus/cvprw20_cpvtonplus.pdf
+"""
+
+
+
+
+
+
+
+# %
