@@ -250,3 +250,7 @@ class ATRDataset(Dataset):
         dataset = self.get_tf_dataset(dataset='test')
         it = iter(dataset)
         return it
+
+class VtonPrep(Dataset):
+    def __init__(self):
+        pass
