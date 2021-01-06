@@ -252,5 +252,221 @@ class ATRDataset(Dataset):
         return it
 
 class VtonPrep(Dataset):
-    def __init__(self):
-        pass
+    
+    """[summary]
+
+    Returns:
+        [type]: [description]
+    """
+
+    LABEL2INT = {
+        'Background': 0,
+        'Hat': 1,
+        'Hair': 2,
+        'Glove': 3,
+        'Sunglasses': 4,
+        'UpperClothes': 5,
+        'Dress': 6,
+        'Coat': 7,
+        'Socks': 8,
+        'Pants': 9,
+        'Jumpsuits': 10,
+        'Scarf': 11,
+        'Skirt': 12,
+        'Face': 13,
+        'Left-arm': 14,
+        'Right-arm': 15,
+        'Left-leg': 16,
+        'Right-leg': 17,
+        'Left-shoe': 18,
+        'Right-shoe': 19
+    }
+
+    INT2LABEL = {v: k for k, v in LABEL2INT.items()}
+
+    FEATURE_DIR_NAME = ['cloth', 'cloth-mask', 'image', 'image-parse', 'pose']
+
+    def __init__(self, root, img_shape=(256, 192, 3)):
+        self.root = root
+        self.img_shape = img_shape
+        self.train_dir = os.path.join(root, "train")
+        self.test_dir = os.path.join(root, "test")
+        self.train_path = self.__get_data_path("train")
+        self.test_path = self.__get_data_path("test")
+
+    def __get_image_path_only(self, dir_name):
+        names = []
+        for f_name in os.listdir(os.path.join(self.root, dir_name, "image")):
+            names.append(os.path.join(self.root, dir_name, "image", f_name))
+        return np.asarray(names)
+
+    def __get_image_name_only(self, dir_name):
+        names = []
+        for f_name in os.listdir(os.path.join(self.root, dir_name, "image")):
+            names.append(f_name)
+        return np.asarray(names)
+
+    def __get_data_path(self, dir_name: str):
+        data = []
+        file_names = self.__get_image_name_only(dir_name)
+        for img_name in file_names:
+            tmp = {k: os.path.join(self.root, dir_name, k, img_name) for k in VtonPrep.FEATURE_DIR_NAME}
+            # Hotfix extension: Change .jpg to .png
+            tmp['image-parse'] = tmp['image-parse'][:-3] + "png"
+            data.append(tmp)
+        return data
+
+    def __generator(self, pipeline="train"):
+
+        paths = None
+        if pipeline == "train":
+            paths = self.train_path
+        elif pipeline == "test":
+            paths = self.test_path
+        else:
+            print("Wrong pipeline. Only 'train' or 'test' can be passed")
+            return None
+
+        # Return a tensorflow batch dataset
+        for _, sample_data in enumerate(paths):
+
+            sample_img = np.asarray(Image.open(sample_data['image']))
+            sample_img = preprocess_image(sample_img)
+
+            sample_cloth = np.asarray(Image.open(sample_data['cloth']))
+            sample_cloth = preprocess_image(sample_cloth)
+
+            sample_cloth_mask = np.asarray(Image.open(sample_data['cloth-mask']))
+            sample_cloth_mask = preprocess_image(sample_cloth_mask, tanh_range=False)
+
+            sample_parse = tf.expand_dims(np.asarray(Image.open(sample_data['image-parse'])), axis=-1)
+
+            # sample_body_mask shape (256, 192, 1). Range [0, 19]. Representing classes.
+            body_masking_channels = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 15, 16, 17, 18, 19]
+            sample_body_mask = [sample_parse == c for c in body_masking_channels]
+            sample_body_mask = tf.reduce_any(sample_body_mask, axis=0)
+            sample_body_mask = tf.cast(sample_body_mask, dtype=tf.float32)
+
+            # Take face hair
+            face_hair_masking_channels = [1, 2, 13]
+            sample_face_hair_mask = [sample_parse == c for c in face_hair_masking_channels]
+            sample_face_hair_mask = tf.reduce_any(sample_face_hair_mask, axis=0)
+            sample_face_hair_mask = tf.cast(sample_face_hair_mask, dtype=tf.float32)
+            sample_face_hair = sample_img * sample_face_hair_mask
+
+            # Take actual clothing mask in the person
+            clothing_masking_channels = [5, 6, 7, 12]
+            sample_clothing_mask = [sample_parse == c for c in clothing_masking_channels]
+            sample_clothing_mask = tf.reduce_any(sample_clothing_mask, axis=0)
+            sample_clothing_mask = tf.cast(sample_clothing_mask, dtype=tf.float32)
+
+            # Pose
+            sample_pose = np.asarray(Image.open(sample_data['pose']))
+            sample_pose = preprocess_image(sample_pose)
+
+            yield {
+                'image': sample_img,
+                'cloth': sample_cloth,
+                'cloth-mask': sample_cloth_mask,
+                'body-mask': sample_body_mask,
+                'face-hair': sample_face_hair,
+                'actual-cloth-mask': sample_clothing_mask,
+                'pose': sample_pose
+            }
+
+    def get_tf_train_dataset(self):
+        ds = tf.data.Dataset.from_generator(
+            self.__generator,
+            args=("train"),
+            output_signature=({
+                'image': tf.TensorSpec(self.img_shape),
+                'cloth': tf.TensorSpec(self.img_shape),
+                'cloth-mask': tf.TensorSpec((*self.img_shape[:2], 1)),
+                'body-mask': tf.TensorSpec((*self.img_shape[:2], 1)),
+                'face-hair': tf.TensorSpec(self.img_shape),
+                'actual-cloth-mask': tf.TensorSpec((*self.img_shape[:2], 1)),
+                'pose': tf.TensorSpec(self.img_shape),
+            })
+        )
+        return ds
+
+    def get_tf_test_dataset(self):
+        ds = tf.data.Dataset.from_generator(
+            self.__generator,
+            args=("test"),
+            output_signature=({
+                'image': tf.TensorSpec(self.img_shape),
+                'cloth': tf.TensorSpec(self.img_shape),
+                'cloth-mask': tf.TensorSpec((*self.img_shape[:2], 1)),
+                'body-mask': tf.TensorSpec((*self.img_shape[:2], 1)),
+                'face-hair': tf.TensorSpec(self.img_shape),
+                'actual-cloth-mask': tf.TensorSpec((*self.img_shape[:2], 1)),
+                'pose': tf.TensorSpec(self.img_shape),
+            })
+        )
+        return ds
+    
+    def get_random_data(self, dir_name="train"):
+        if dir_name == "train":
+            r = random.randint(0, len(self.train_path) - 1)
+            return self.train_path[r]
+        elif dir_name == "test":
+            r = random.randint(0, len(self.test_path) - 1)
+            return self.test_path[r]
+        print("Wrong forlder format")
+        return None
+    
+    def visualize_random_data(self):
+        sample_data = self.get_random_data()
+
+        sample_img = np.asarray(Image.open(sample_data['image']))
+        sample_img = preprocess_image(sample_img)
+        print(f"Shape: {sample_img.shape}")
+        print(f"Range: [{tf.reduce_min(sample_img)}, {tf.reduce_max(sample_img)}]")
+        show_img(sample_img)
+
+        sample_cloth = np.asarray(Image.open(sample_data['cloth']))
+        sample_cloth = preprocess_image(sample_cloth)
+        print(f"Shape: {sample_cloth.shape}")
+        print(f"Range: [{tf.reduce_min(sample_cloth)}, {tf.reduce_max(sample_cloth)}]")
+        show_img(sample_cloth)
+
+        sample_cloth_mask = np.asarray(Image.open(sample_data['cloth-mask']))
+        sample_cloth_mask = preprocess_image(sample_cloth_mask, tanh_range=False)
+        print(f"Shape: {sample_cloth_mask.shape}")
+        print(f"Range: [{tf.reduce_min(sample_cloth_mask)}, {tf.reduce_max(sample_cloth_mask)}]")
+        show_img(sample_cloth_mask)
+
+        sample_parse = tf.expand_dims(np.asarray(Image.open(sample_data['image-parse'])), axis=-1)
+        print(f"Shape: {sample_parse.shape}")
+        print(f"Range: [{tf.reduce_min(sample_parse)}, {tf.reduce_max(sample_parse)}]")
+        show_img(sample_parse)
+
+        # sample_body_mask shape (256, 192, 1). Range [0, 19]. Representing classes.
+        body_masking_channels = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 15, 16, 17, 18, 19]
+        sample_body_mask = [sample_parse == c for c in body_masking_channels]
+        sample_body_mask = tf.reduce_any(sample_body_mask, axis=0)
+        sample_body_mask = tf.cast(sample_body_mask, dtype=tf.float32)
+        show_img(sample_body_mask)
+
+        # Take face hair
+        face_hair_masking_channels = [1, 2, 13]
+        sample_face_hair_mask = [sample_parse == c for c in face_hair_masking_channels]
+        sample_face_hair_mask = tf.reduce_any(sample_face_hair_mask, axis=0)
+        sample_face_hair_mask = tf.cast(sample_face_hair_mask, dtype=tf.float32)
+        sample_face_hair = sample_img * sample_face_hair_mask
+        show_img(sample_face_hair)
+
+        # Take cloth mask
+        clothing_masking_channels = [5, 6, 7, 12]
+        sample_clothing_mask = [sample_parse == c for c in clothing_masking_channels]
+        sample_clothing_mask = tf.reduce_any(sample_clothing_mask, axis=0)
+        sample_clothing_mask = tf.cast(sample_clothing_mask, dtype=tf.float32)
+        show_img(sample_clothing_mask)
+
+        # Pose
+        sample_pose = np.asarray(Image.open(sample_data['pose']))
+        sample_pose = preprocess_image(sample_pose)
+        print(f"Shape: {sample_pose.shape}")
+        print(f"Range: [{tf.reduce_min(sample_pose)}, {tf.reduce_max(sample_pose)}]")
+        show_img(sample_pose)
