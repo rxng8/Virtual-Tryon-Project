@@ -4,7 +4,7 @@ import tensorflow as tf
 from tf.keras import layers
 from tf.keras import Model
 from .utils import *
-from .stn import spatial_transformer_network, affine_grid_generator, bilinear_sampler
+from .stn import affine_grid_generator, bilinear_sampler
 
 class GMM(Model):
 
@@ -14,10 +14,17 @@ class GMM(Model):
         self.extractorB = FeatureExtractor()
         self.correlator = FeatureCorrelator()
         self.regressor = FeatureRegressor()
-        self.grid_gen = TPSGridGenerator()
+        self.grid_gen = AffineGridGenerator()
+        self.transformer = BilinearSampler()
 
-    def call(self, batch_inputs):
-        return None
+    def call(self, batch_input_image, batch_input_cloth):
+        image_tensor = self.extractorA(batch_input_image)
+        cloth_tensor = self.extractorB(batch_input_cloth)
+        correlation_tensor = self.correlator(image_tensor, cloth_tensor)
+        theta_tensor = self.regressor(correlation_tensor)
+        affine_grid = self.grid_gen(theta_tensor)
+        transformed = self.transformer(affine_grid)
+        return theta_tensor, affine_grid, transformed
 
 class FeatureExtractor(Model):
     def __init__(self, starting_out_channels=64, n_down_layers=4):
@@ -42,11 +49,11 @@ class FeatureL2Norm(Model):
     def __init__(self):
         super().__init__()
 
-    def call(self, batch_input):
+    def call(self, batch_inputs):
         epsilon = 1e-6
-        norm = (batch_input ** 2 + 1 + epsilon ) ** 0.5
+        norm = (batch_inputs ** 2 + 1 + epsilon ) ** 0.5
         # norm = torch.pow(torch.sum(torch.pow(feature,2),1)+epsilon,0.5).unsqueeze(1).expand_as(feature)
-        return batch_input / norm
+        return batch_inputs / norm
 
 class FeatureCorrelator(Model):
     def __init__(self):
@@ -82,11 +89,30 @@ class FeatureRegressor(Model):
         )
         self.dense = make_dense_layer(output_theta_dim, activation='tanh')
         
-    def call(self, batch_input):
-        tensor = self.conv(batch_input)
+    def call(self, batch_inputs):
+        tensor = self.conv(batch_inputs)
         tensor = tf.keras.layers.Flatten()(tensor)
         out = self.dense(tensor)
         return out
+
+class BilinearSampler(Model):
+    def __init__(self):
+        super().__init__()
+
+    def call(self, batch_inputs, x_s, y_s):
+        # Expect x_s = batch_grids[:, 0, :, :]
+        #        y_s = batch_grids[:, 1, :, :] returned from affine grid gen
+        return bilinear_sampler(batch_inputs, x_s, y_s)
+
+class AffineGridGenerator(Model):
+    def __init__(self, out_h=256, out_w=192):
+        super().__init__()
+        self.out_h = out_h
+        self.out_w = out_w
+
+    def call(self, batch_theta):
+        return affine_grid_generator(self.out_h, self.out_w, batch_theta)
+    
 
 class TPSGridGenerator(Model):
     def __init__(self, out_h=256, out_w=192, grid_size=3, reg_factor=0):
@@ -106,13 +132,17 @@ class TPSGridGenerator(Model):
         P_Y, P_X = tf.meshgrid(axis_coords, axis_coords)
         P_X = tf.reshape(P_X,(-1,1)) # size (N,1)
         P_Y = tf.reshape(P_Y,(-1,1)) # size (N,1)
+
+        # Column vector of original control points axis x
         self.P_X_base = P_X.clone()
+        # Column vector of original control points axis x
         self.P_Y_base = P_Y.clone()
+
         self.Li = tf.expand_dims(self.compute_L_inverse(P_X, P_Y), axis=0)
         self.P_X = tf.transpose(tf.reshape(P_X, shape=(*P_X.shape, 1, 1, 1)), perm=[1,1,1,1,self.n_control_points])
         self.P_Y = tf.transpose(tf.reshape(P_Y, shape=(*P_Y.shape, 1, 1, 1)), perm=[1,1,1,1,self.n_control_points])
     
-    def call(self, batch_input):
+    def call(self, batch_inputs):
 
         return None
 
@@ -146,4 +176,29 @@ class TPSGridGenerator(Model):
         return Li
 
     def apply_transformation(self, theta, points):
+        # Expects points to be the original meshgrid of the images
+        # Shape (B, W, H, 2). With:
+        #   points(B, W, H, 0) is the x coord of the meshgrid, and
+        #   points(B, W, H, 1) is the y coord of the meshgrid.
+        
+        # Theta is the param to compute target control points.
+        # Theta shape (B, 2 * grid_size * grid_size, 1, 1)
+        if len(theta.shape) == 2:
+            theta = tf.reshape(theta, (*theta.shape, 1, 1))
+
+        # input are the corresponding control points P_i, the target control points Q_i
+        # Shape (B, grid_size^2, 1)
+        Q_X = tf.squeeze(theta[:,:self.n_control_points,:,:], [3])
+        Q_Y = tf.squeeze(theta[:,self.n_control_points:,:,:], [3])
+
+        Q_X = Q_X + tf.broadcast_to(self.P_X_base, shape=Q_X.shape)
+        Q_Y = Q_Y + tf.broadcast_to(self.P_Y_base, shape=Q_Y.shape)
+
+        # get spatial dimensions of points
+        n_batch = points.shape[0]
+        n_height = points.shape[1]
+        n_width = points.shape[2]
+
+        # TODO: Not done!
+
         pass
