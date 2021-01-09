@@ -14,7 +14,7 @@ class GMM(Model):
         self.extractorB = FeatureExtractor()
         self.correlator = FeatureCorrelator()
         self.regressor = FeatureRegressor()
-        self.grid_gen = GridTTPSGridGeneratorransformer()
+        self.grid_gen = TPSGridGenerator()
 
     def call(self, batch_inputs):
         return None
@@ -56,11 +56,11 @@ class FeatureCorrelator(Model):
         # batch_input shape (b, h, w, c)
         assert batch_input_1.shape == batch_input_2.shape
         b, h, w, c = batch_input_1.shape
-        feature1 = tf.transpose(batch_input_1, perm=[b, w, h, c])
+        feature1 = tf.transpose(batch_input_1, perm=[0, 2, 1, 3])
         feature1 = tf.reshape(feature1, [b, w * h, c])
 
         feature2 = tf.reshape(batch_input_2, [b, h * w, c])
-        feature2 = tf.transpose(feature2, perm=[b, c, h * w])
+        feature2 = tf.transpose(feature2, perm=[0, 2, 1])
 
         # Batch matrix multiplication
         # correlation_tensor shape (b, h * w, h * w)
@@ -99,6 +99,51 @@ class TPSGridGenerator(Model):
         # sampling grid with dim-0 coords (Y)
         self.grid_X,self.grid_Y = np.meshgrid(np.linspace(-1,1,out_w),np.linspace(-1,1,out_h))
 
-    def call(self, batch_inputs):
+        # Assuming that we use regular grid
+        # Create set of control points (in the original grid)
+        axis_coords = tf.linspace(-1.0, 1.0, grid_size)
+        self.n_control_points = grid_size * grid_size
+        P_Y, P_X = tf.meshgrid(axis_coords, axis_coords)
+        P_X = tf.reshape(P_X,(-1,1)) # size (N,1)
+        P_Y = tf.reshape(P_Y,(-1,1)) # size (N,1)
+        self.P_X_base = P_X.clone()
+        self.P_Y_base = P_Y.clone()
+        self.Li = tf.expand_dims(self.compute_L_inverse(P_X, P_Y), axis=0)
+        self.P_X = tf.transpose(tf.reshape(P_X, shape=(*P_X.shape, 1, 1, 1)), perm=[1,1,1,1,self.n_control_points])
+        self.P_Y = tf.transpose(tf.reshape(P_Y, shape=(*P_Y.shape, 1, 1, 1)), perm=[1,1,1,1,self.n_control_points])
+    
+    def call(self, batch_input):
 
         return None
+
+    # This code's logic is derived from the original CP-VTON github
+    def compute_L_inverse(self, X, Y):
+        # X and Y here is the column vector of the original control points
+        # X and Y shape (N, 1)
+        N = X.shape[0]
+
+        # Construct K
+        X_mat = tf.broadcast_to(X, shape=(N, N))
+        Y_mat = tf.broadcast_to(Y, shape=(N, N))
+
+        P_dist_squared = (X_mat - tf.transpose(X_mat)) ** 2  +  (Y_mat - tf.transpose(Y_mat)) ** 2
+        P_dist_squared[P_dist_squared == 0] = 1
+
+        K = P_dist_squared * tf.math.log(P_dist_squared)
+
+        # construct matrix L
+        O = tf.ones_like(X)
+        Z = tf.zeros((3, 3))     
+        P = tf.concat([O, X, Y], axis=1)
+        L = tf.concat(
+            [
+                tf.concat([K, P], axis=1), 
+                tf.concat([tf.tranpose(P), Z], axis=1)
+            ], 
+            axis=0
+        )
+        Li = tf.linalg.inv(L)
+        return Li
+
+    def apply_transformation(self, theta, points):
+        pass
