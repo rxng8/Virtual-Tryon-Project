@@ -2,6 +2,9 @@
 from tensorflow_examples.models.pix2pix import pix2pix
 import tensorflow as tf
 
+def make_dense_layer(out_channels, activation='relu'):
+    return tf.keras.layers.Dense(out_channels, activation=activation)
+
 def make_conv_layer(out_channels, strides=1, activation='relu', padding='same'):
     layer = tf.keras.layers.Conv2D(
         filters=out_channels,
