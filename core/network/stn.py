@@ -1,8 +1,13 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
 """
+   Author: Alex Nguyen
+   Gettysburg College
+
 This piece of code is taken and editted from this github:
     https://github.com/kevinzakka/spatial-transformer-network/blob/master/stn/transformer.py
 """
-
 
 import tensorflow as tf
 

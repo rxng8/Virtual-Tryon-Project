@@ -1,4 +1,10 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
 """
+   Author: Alex Nguyen
+   Gettysburg College
+
 First read this: about PSP Net: 
     https://arxiv.org/pdf/1612.01105.pdf
 

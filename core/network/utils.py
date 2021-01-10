@@ -1,3 +1,10 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+"""
+   Author: Alex Nguyen
+   Gettysburg College
+"""
 
 from tensorflow_examples.models.pix2pix import pix2pix
 import tensorflow as tf

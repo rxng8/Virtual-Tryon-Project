@@ -1,3 +1,11 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+"""
+   Author: Alex Nguyen
+   Gettysburg College
+"""
+
 import sys
 from pathlib import Path
 from typing import List, Dict, Tuple
@@ -377,7 +385,6 @@ class VtonPrep(Dataset):
     def get_tf_train_dataset(self):
         ds = tf.data.Dataset.from_generator(
             self.__generator,
-            args=("train"),
             output_signature=({
                 'image': tf.TensorSpec(self.img_shape),
                 'cloth': tf.TensorSpec(self.img_shape),

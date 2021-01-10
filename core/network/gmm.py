@@ -1,8 +1,17 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+"""
+   Author: Alex Nguyen
+   Gettysburg College
+   gmm.py: This file contains models of geometric matching
+"""
+
 # Geometric matching module
 
 import tensorflow as tf
-from tf.keras import layers
-from tf.keras import Model
+from tensorflow.keras import layers
+from tensorflow.keras import Model
 from .utils import *
 from .stn import affine_grid_generator, bilinear_sampler
 
@@ -23,7 +32,9 @@ class GMM(Model):
         correlation_tensor = self.correlator(image_tensor, cloth_tensor)
         theta_tensor = self.regressor(correlation_tensor)
         affine_grid = self.grid_gen(theta_tensor)
-        transformed = self.transformer(affine_grid)
+        x_s = affine_grid[:, 0, :, :]
+        y_s = affine_grid[:, 1, :, :]
+        transformed = self.transformer(cloth_tensor, x_s, y_s)
         return theta_tensor, affine_grid, transformed
 
 class FeatureExtractor(Model):
@@ -35,9 +46,9 @@ class FeatureExtractor(Model):
             out_channels = starting_out_channels * (2 ** (i + 1))
             models += [make_down_conv_sequence(out_channels)]
         
-        models += make_conv_layer(512)
-        models += make_dropout_layer()
-        models += make_conv_layer(512)
+        models.append(make_conv_layer(512))
+        models.append(make_dropout_layer())
+        models.append(make_conv_layer(512))
         
         self.model = tf.keras.Sequential(models)
         

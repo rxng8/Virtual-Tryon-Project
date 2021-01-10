@@ -1,4 +1,10 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
 """
+   Author: Alex Nguyen
+   Gettysburg College
+
 Reference:
     https://www.youtube.com/watch?v=m3rK3gx0tZo
     https://docs.opencv.org/2.4/modules/imgproc/doc/structural_analysis_and_shape_descriptors.html

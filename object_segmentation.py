@@ -1,4 +1,10 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
 """
+  Author: Alex Nguyen
+  Gettysburg College
+
 Refer to this link:
     https://towardsdatascience.com/image-segmentation-with-six-lines-0f-code-acb870a462e8
 """
