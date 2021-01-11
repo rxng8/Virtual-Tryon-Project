@@ -17,8 +17,9 @@ from .stn import affine_grid_generator, bilinear_sampler
 
 class GMM(Model):
 
-    def __init__(self):
+    def __init__(self, batch_size=16):
         super().__init__()
+        self.batch_size = batch_size
         self.extractorA = FeatureExtractor()
         self.extractorB = FeatureExtractor()
         self.correlator = FeatureCorrelator()
@@ -27,15 +28,54 @@ class GMM(Model):
         self.transformer = BilinearSampler()
 
     def call(self, batch_input_image, batch_input_cloth):
+
         image_tensor = self.extractorA(batch_input_image)
+        # print("Done image_tensor")
+
         cloth_tensor = self.extractorB(batch_input_cloth)
+        # print("Done cloth_tensor ")
+
         correlation_tensor = self.correlator(image_tensor, cloth_tensor)
+        # print("Done correlation_tensor ")
+
         theta_tensor = self.regressor(correlation_tensor)
+        theta_tensor = tf.reshape(theta_tensor, [self.batch_size, 2, 3])
+        # print("Done theta_tensor ")
+
         affine_grid = self.grid_gen(theta_tensor)
+        # print("Done affine_grid ")
+
         x_s = affine_grid[:, 0, :, :]
         y_s = affine_grid[:, 1, :, :]
-        transformed = self.transformer(cloth_tensor, x_s, y_s)
+
+        transformed = self.transformer(batch_input_cloth, x_s, y_s)
+        # print("Done transformed ")
+
         return theta_tensor, affine_grid, transformed
+
+
+class SimpleGMM(Model):
+    def __init__(self, batch_size=16):
+        super().__init__()
+        self.batch_size = batch_size
+        self.extractorA = FeatureExtractor()
+        self.extractorB = FeatureExtractor()
+        self.correlator = FeatureCorrelator()
+        self.generator = ImageRegenerator()
+
+    def call(self, batch_input_image, batch_input_cloth):
+        image_tensor = self.extractorA(batch_input_image)
+        # print(f"Done image_tensor: {image_tensor.shape}")
+
+        cloth_tensor = self.extractorB(batch_input_cloth)
+        # print(f"Done cloth_tensor: {cloth_tensor.shape} ")
+
+        correlation_tensor = self.correlator(image_tensor, cloth_tensor)
+        # print(f"Done correlation_tensor {correlation_tensor.shape} ")
+
+        out = self.generator(correlation_tensor)
+        # print(f"Done out {out.shape} ")
+        return out
 
 class FeatureExtractor(Model):
     def __init__(self, starting_out_channels=64, n_down_layers=4):
@@ -52,6 +92,23 @@ class FeatureExtractor(Model):
         
         self.model = tf.keras.Sequential(models)
         
+    def call(self, batch_inputs):
+        return self.model(batch_inputs)
+
+class ImageRegenerator(Model):
+    def __init__(self, starting_out_channels=64, n_up_layers=4):
+        super().__init__()
+        models = []
+
+        for i in range(n_up_layers - 1, -1, -1):
+            out_channels = starting_out_channels * (2 ** i)
+            models += [make_up_conv_layer(out_channels)]
+        
+        models.append(make_deconv_layer(1, activation="sigmoid"))
+        
+        self.model = tf.keras.Sequential(models)
+        
+
     def call(self, batch_inputs):
         return self.model(batch_inputs)
 
