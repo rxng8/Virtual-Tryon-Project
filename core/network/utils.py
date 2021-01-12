@@ -40,6 +40,19 @@ def make_down_conv_sequence(out_channels):
         make_dropout_layer()
     ])
 
+def make_up_conv_layer(out_channels):
+    return tf.keras.Sequential([
+        pix2pix.upsample(out_channels, 4),
+        make_dropout_layer()
+    ])
+
+def make_deconv_layer(out_channels, activation='relu'):
+    return tf.keras.layers.Conv2DTranspose(
+        out_channels, 4, strides=1,
+        padding='same',
+        activation=activation
+    )
+
 
 def conv(batch_input, out_channels, strides=1, activation='relu'):
 
