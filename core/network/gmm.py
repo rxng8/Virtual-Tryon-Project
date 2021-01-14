@@ -63,14 +63,17 @@ class SimpleGMM(Model):
         self.batch_size = batch_size
         self.extractorA = FeatureExtractor()
         self.extractorB = FeatureExtractor()
+        self.normalizer = FeatureL2Norm()
         self.correlator = FeatureCorrelator()
         self.generator = ImageRegenerator()
 
     def call(self, batch_input_image, batch_input_cloth):
         image_tensor = self.extractorA(batch_input_image)
+        image_tensor = self.normalizer(image_tensor)
         # print(f"Done image_tensor: {image_tensor.shape}")
 
         cloth_tensor = self.extractorB(batch_input_cloth)
+        cloth_tensor = self.normalizer(cloth_tensor)
         # print(f"Done cloth_tensor: {cloth_tensor.shape} ")
 
         correlation_tensor = self.correlator(image_tensor, cloth_tensor)
