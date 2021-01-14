@@ -22,6 +22,7 @@ class GMM(Model):
         self.batch_size = batch_size
         self.extractorA = FeatureExtractor()
         self.extractorB = FeatureExtractor()
+        self.normalizer = FeatureL2Norm()
         self.correlator = FeatureCorrelator()
         self.regressor = FeatureRegressor()
         self.grid_gen = AffineGridGenerator()
@@ -30,9 +31,11 @@ class GMM(Model):
     def call(self, batch_input_image, batch_input_cloth):
 
         image_tensor = self.extractorA(batch_input_image)
+        image_tensor = self.normalizer(image_tensor)
         # print("Done image_tensor")
 
         cloth_tensor = self.extractorB(batch_input_cloth)
+        cloth_tensor = self.normalizer(cloth_tensor)
         # print("Done cloth_tensor ")
 
         correlation_tensor = self.correlator(image_tensor, cloth_tensor)
@@ -94,6 +97,18 @@ class FeatureExtractor(Model):
         
     def call(self, batch_inputs):
         return self.model(batch_inputs)
+
+class FeatureL2Norm(Model):
+    def __init__(self):
+        super().__init__()
+
+    def call(self, batch_inputs):
+        epsilon = 1e-6
+        norm = torch.pow(torch.sum(torch.pow(feature,2),1)+epsilon,0.5).unsqueeze(1).expand_as(feature)
+        norm = (tf.sum(batch_inputs ** 2, axis=1) + epsilon ) ** 0.5
+        norm = tf.expand_dims(norm, axis=2)
+        norm = tf.broadcast_to(norm, shape=(norm.shape[0], batch_inputs.shape[1]))
+        return batch_inputs / norm
 
 class ImageRegenerator(Model):
     def __init__(self, starting_out_channels=64, n_up_layers=4):
