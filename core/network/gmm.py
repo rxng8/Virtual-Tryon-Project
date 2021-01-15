@@ -2,9 +2,11 @@
 # -*- coding: utf-8 -*-
 
 """
-   Author: Alex Nguyen
-   Gettysburg College
-   gmm.py: This file contains models of geometric matching
+    Author: Alex Nguyen
+    Gettysburg College
+    gmm.py: This file contains models of geometric matching. The code logic in
+    this module is derived from here:
+        https://github.com/sergeywong/cp-vton/blob/master/networks.py
 """
 
 # Geometric matching module
@@ -12,10 +14,54 @@
 import tensorflow as tf
 from tensorflow.keras import layers
 from tensorflow.keras import Model
+import numpy as np
+
 from .utils import *
 from .stn import affine_grid_generator, bilinear_sampler
 
-class GMM(Model):
+class GMMTPS(Model):
+
+    def __init__(self, batch_size=16, grid_size=5):
+        super().__init__()
+        self.batch_size = batch_size
+        self.grid_size = grid_size
+        
+        self.extractorA = FeatureExtractor()
+        self.extractorB = FeatureExtractor()
+        self.normalizer = FeatureL2Norm()
+        self.correlator = FeatureCorrelator()
+        self.regressor = FeatureRegressor(output_theta_dim=2*grid_size*grid_size)
+        self.grid_gen = TPSGridGenerator(grid_size=grid_size)
+        self.transformer = BilinearSampler()
+
+    def call(self, batch_input_image, batch_input_cloth):
+
+        image_tensor = self.extractorA(batch_input_image)
+        image_tensor = self.normalizer(image_tensor)
+        # print("Done image_tensor")
+
+        cloth_tensor = self.extractorB(batch_input_cloth)
+        cloth_tensor = self.normalizer(cloth_tensor)
+        # print("Done cloth_tensor ")
+
+        correlation_tensor = self.correlator(image_tensor, cloth_tensor)
+        # print("Done correlation_tensor ")
+
+        theta_tensor = self.regressor(correlation_tensor)
+        # print("Done theta_tensor ")
+
+        tps_grid = self.grid_gen(theta_tensor)
+        # print("Done tps_grid ")
+
+        x_s = tps_grid[:, :, :, 0]
+        y_s = tps_grid[:, :, :, 1]
+
+        transformed = self.transformer(batch_input_cloth, x_s, y_s)
+        # print("Done transformed ")
+
+        return theta_tensor, tps_grid, transformed
+
+class GMMSTN(Model):
 
     def __init__(self, batch_size=16):
         super().__init__()
@@ -106,11 +152,12 @@ class FeatureL2Norm(Model):
         super().__init__()
 
     def call(self, batch_inputs):
+        # Normalize channel
+        # Expect batch_inputs shape (B, H, W, C)
         epsilon = 1e-6
-        norm = torch.pow(torch.sum(torch.pow(feature,2),1)+epsilon,0.5).unsqueeze(1).expand_as(feature)
-        norm = (tf.sum(batch_inputs ** 2, axis=1) + epsilon ) ** 0.5
-        norm = tf.expand_dims(norm, axis=2)
-        norm = tf.broadcast_to(norm, shape=(norm.shape[0], batch_inputs.shape[1]))
+        norm = (tf.sum(batch_inputs ** 2, axis=3) + epsilon ) ** 0.5
+        norm = tf.expand_dims(norm, axis=3)
+        norm = tf.broadcast_to(norm, shape=batch_inputs.shape)
         return batch_inputs / norm
 
 class ImageRegenerator(Model):
@@ -129,17 +176,6 @@ class ImageRegenerator(Model):
 
     def call(self, batch_inputs):
         return self.model(batch_inputs)
-
-class FeatureL2Norm(Model):
-    # TODO: HAve not done yet
-    def __init__(self):
-        super().__init__()
-
-    def call(self, batch_inputs):
-        epsilon = 1e-6
-        norm = (batch_inputs ** 2 + 1 + epsilon ) ** 0.5
-        # norm = torch.pow(torch.sum(torch.pow(feature,2),1)+epsilon,0.5).unsqueeze(1).expand_as(feature)
-        return batch_inputs / norm
 
 class FeatureCorrelator(Model):
     def __init__(self):
@@ -201,13 +237,13 @@ class AffineGridGenerator(Model):
     
 
 class TPSGridGenerator(Model):
-    def __init__(self, out_h=256, out_w=192, grid_size=3, reg_factor=0):
+    def __init__(self, out_h=256, out_w=192, grid_size=5, reg_factor=0):
         super().__init__()
         self.out_h, self.out_w = out_h, out_w
         self.reg_factor = reg_factor
 
         # create grid in numpy
-        self.grid = np.zeros( [self.out_h, self.out_w, 3], dtype=np.float32)
+        self.grid = np.zeros([self.out_h, self.out_w, 3], dtype=np.float32)
         # sampling grid with dim-0 coords (Y)
         self.grid_X,self.grid_Y = np.meshgrid(np.linspace(-1,1,out_w),np.linspace(-1,1,out_h))
 
@@ -225,12 +261,13 @@ class TPSGridGenerator(Model):
         self.P_Y_base = P_Y.clone()
 
         self.Li = tf.expand_dims(self.compute_L_inverse(P_X, P_Y), axis=0)
-        self.P_X = tf.transpose(tf.reshape(P_X, shape=(*P_X.shape, 1, 1, 1)), perm=[1,1,1,1,self.n_control_points])
-        self.P_Y = tf.transpose(tf.reshape(P_Y, shape=(*P_Y.shape, 1, 1, 1)), perm=[1,1,1,1,self.n_control_points])
+        # Shape after (1, 1, 1, 1, n_control_points) <=> (B, H, W, C, n_control_points)
+        self.P_X = tf.transpose(tf.reshape(P_X, shape=(*P_X.shape, 1, 1, 1)), perm=[4, 1, 2, 3, 0])
+        self.P_Y = tf.transpose(tf.reshape(P_Y, shape=(*P_Y.shape, 1, 1, 1)), perm=[4, 1, 2, 3, 0])
     
-    def call(self, batch_inputs):
-
-        return None
+    def call(self, theta):
+        warped_grid = self.apply_transformation(theta, tf.concat([self.grid_X,self.grid_Y], axis=3))
+        return warped_grid
 
     # This code's logic is derived from the original CP-VTON github
     def compute_L_inverse(self, X, Y):
@@ -262,6 +299,8 @@ class TPSGridGenerator(Model):
         return Li
 
     def apply_transformation(self, theta, points):
+        # Expected theta to be shape (B, kernels)
+
         # Expects points to be the original meshgrid of the images
         # Shape (B, W, H, 2). With:
         #   points(B, W, H, 0) is the x coord of the meshgrid, and
@@ -273,7 +312,7 @@ class TPSGridGenerator(Model):
             theta = tf.reshape(theta, (*theta.shape, 1, 1))
 
         # input are the corresponding control points P_i, the target control points Q_i
-        # Shape (B, grid_size^2, 1)
+        # Shape (B, grid_size^2, 1) == (B, n_control_points, 1)
         Q_X = tf.squeeze(theta[:,:self.n_control_points,:,:], [3])
         Q_Y = tf.squeeze(theta[:,self.n_control_points:,:,:], [3])
 
@@ -285,6 +324,94 @@ class TPSGridGenerator(Model):
         n_height = points.shape[1]
         n_width = points.shape[2]
 
-        # TODO: Not done!
+        # repeat pre-defined control points along spatial dimensions of points to be transformed
+        P_X = tf.broadcast_to(self.P_X, shape=(1,n_height,n_width,1,self.n_control_points))
+        P_Y = tf.broadcast_to(self.P_Y, shape=(1,n_height,n_width,1,self.n_control_points))
 
-        pass
+        # compute weigths for non-linear part
+        # Shape (B, N, N) x (B, N, 1) = (B, N, 1)
+        W_X = tf.broadcast_to(
+            self.Li[:, :self.n_control_points, :self.n_control_points], 
+            shape=(n_batch, *self.Li.shape[1:])
+        ) @ Q_X
+        W_Y = tf.broadcast_to(
+            self.Li[:, :self.n_control_points, :self.n_control_points], 
+            shape=(n_batch, *self.Li.shape[1:])
+        ) @ Q_Y
+
+        # reshape
+        # W_X, W_Y: size [B,N,1,1,1]
+        W_X = tf.reshape(W_X, shape=(*W_X.shape, 1, 1))
+        # W_X, W_Y: size [B,1,1,1,N]
+        W_X = tf.transpose(W_X, perm=[0, 4, 2, 3, 1])
+        # W_X, W_Y: size [B,H,W,1,N]
+        W_X = tf.tile(W_X, (1, n_height, n_width, 1, 1))
+
+        # W_X, W_Y: size [B,N,1,1,1]
+        W_Y = tf.reshape(W_Y, shape=(*W_Y.shape, 1, 1))
+        # W_X, W_Y: size [B,1,1,1,N]
+        W_Y = tf.transpose(W_Y, perm=[0, 4, 2, 3, 1])
+        # W_X, W_Y: size [B,H,W,1,N]
+        W_Y = tf.tile(W_Y, (1, n_height, n_width, 1, 1))
+
+        # compute weights for affine part (The bottom left part of the Li matrix)
+        A_X = tf.broadcast_to(
+            self.Li[:, self.n_control_points:, :self.n_control_points], 
+            shape=(n_batch, 3, self.n_control_points)
+        ) @ Q_X
+
+        A_Y = tf.broadcast_to(
+            self.Li[:, self.n_control_points:, :self.n_control_points], 
+            shape=(n_batch, 3, self.n_control_points)
+        ) @ Q_Y
+
+        # reshape (similar to reshape above)
+        # A_X, A_Y: size [B,H,W,1,3]
+        A_X = tf.reshape(A_X, shape=(*A_X.shape, 1, 1))
+        A_X = tf.transpose(A_X, perm=[0, 4, 2, 3, 1])
+        A_X = tf.tile(A_X, (1, n_height, n_width, 1, 1))
+
+        A_Y = tf.reshape(A_Y, shape=(*A_Y.shape, 1, 1))
+        A_Y = tf.transpose(A_Y, perm=[0, 4, 2, 3, 1])
+        A_Y = tf.tile(A_Y, (1, n_height, n_width, 1, 1))
+
+
+        # compute distance P_i - (grid_X,grid_Y)
+        # grid is expanded in point dim 4, but not in batch dim 0, as points P_X,P_Y are fixed for all batch
+        points_X_for_summation = tf.reshape(points[:,:,:,0], shape=(*points.shape[:-1], 1, 1))
+        points_X_for_summation = tf.broadcast_to(
+            points_X_for_summation, 
+            shape=(*points.shape[:-1], 1, self.n_control_points)
+        )
+
+        points_Y_for_summation = tf.reshape(points[:,:,:,1], shape=(*points.shape[:-1], 1, 1))
+        points_Y_for_summation = tf.broadcast_to(
+            points_Y_for_summation, 
+            shape=(*points.shape[:-1], 1, self.n_control_points)
+        )
+
+        # use expanded P_X,P_Y in batch dimension
+        delta_X = points_X_for_summation - tf.broadcast_to(P_X, shape=points_X_for_summation.shape)
+        delta_Y = points_Y_for_summation - tf.broadcast_to(P_Y, shape=points_Y_for_summation.shape)
+
+        dist_squared = delta_X ** 2 + delta_Y ** 2
+
+        # U: size [1,H,W,1,N]
+        dist_squared[dist_squared==0] = 1 # avoid NaN in log computation
+        U = dist_squared * tf.log(dist_squared) 
+
+        # expand grid in batch dimension if necessary
+        points_X_batch = tf.expand_dims(points[:,:,:,0], axis=3)
+        points_Y_batch = tf.expand_dims(points[:,:,:,1], axis=3)
+
+        points_X_prime = A_X[:,:,:,:,0]+ \
+                       (A_X[:,:,:,:,1] * points_X_batch) + \
+                       (A_X[:,:,:,:,2] * points_Y_batch) + \
+                       tf.sum(W_X * tf.broadcast_to(U, shape=W_X.shape), axis=4)
+
+        points_Y_prime = A_Y[:,:,:,:,0]+ \
+                       (A_Y[:,:,:,:,1] * points_X_batch) + \
+                       (A_Y[:,:,:,:,2] * points_Y_batch) + \
+                       tf.sum(W_Y * tf.broadcast_to(U, shape=W_Y.shape), axis=4)
+
+        return tf.concat([points_X_prime,points_Y_prime], axis=3)
