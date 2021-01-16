@@ -155,7 +155,7 @@ class FeatureL2Norm(Model):
         # Normalize channel
         # Expect batch_inputs shape (B, H, W, C)
         epsilon = 1e-6
-        norm = (tf.sum(batch_inputs ** 2, axis=3) + epsilon ) ** 0.5
+        norm = (tf.reduce_sum(batch_inputs ** 2, axis=3) + epsilon ) ** 0.5
         norm = tf.expand_dims(norm, axis=3)
         norm = tf.broadcast_to(norm, shape=batch_inputs.shape)
         return batch_inputs / norm
@@ -256,9 +256,9 @@ class TPSGridGenerator(Model):
         P_Y = tf.reshape(P_Y,(-1,1)) # size (N,1)
 
         # Column vector of original control points axis x
-        self.P_X_base = P_X.clone()
-        # Column vector of original control points axis x
-        self.P_Y_base = P_Y.clone()
+        self.P_X_base = tf.identity(P_X)
+        # Column vector of original control points axis y
+        self.P_Y_base = tf.identity(P_Y)
 
         self.Li = tf.expand_dims(self.compute_L_inverse(P_X, P_Y), axis=0)
         # Shape after (1, 1, 1, 1, n_control_points) <=> (B, H, W, C, n_control_points)
@@ -280,7 +280,8 @@ class TPSGridGenerator(Model):
         Y_mat = tf.broadcast_to(Y, shape=(N, N))
 
         P_dist_squared = (X_mat - tf.transpose(X_mat)) ** 2  +  (Y_mat - tf.transpose(Y_mat)) ** 2
-        P_dist_squared[P_dist_squared == 0] = 1
+        # Hacks (Set all zeros-value to 1)
+        P_dist_squared = P_dist_squared + tf.cast(P_dist_squared == 0, P_dist_squared.dtype)
 
         K = P_dist_squared * tf.math.log(P_dist_squared)
 
@@ -291,7 +292,7 @@ class TPSGridGenerator(Model):
         L = tf.concat(
             [
                 tf.concat([K, P], axis=1), 
-                tf.concat([tf.tranpose(P), Z], axis=1)
+                tf.concat([tf.transpose(P), Z], axis=1)
             ], 
             axis=0
         )
@@ -396,9 +397,10 @@ class TPSGridGenerator(Model):
 
         dist_squared = delta_X ** 2 + delta_Y ** 2
 
+        # Hacks (Set all the zeros-value to 1)
         # U: size [1,H,W,1,N]
-        dist_squared[dist_squared==0] = 1 # avoid NaN in log computation
-        U = dist_squared * tf.log(dist_squared) 
+        dist_squared = dist_squared + tf.cast(dist_squared == 0, dist_squared.dtype)  # avoid NaN in log computation
+        U = dist_squared * tf.log(dist_squared)
 
         # expand grid in batch dimension if necessary
         points_X_batch = tf.expand_dims(points[:,:,:,0], axis=3)
@@ -407,11 +409,11 @@ class TPSGridGenerator(Model):
         points_X_prime = A_X[:,:,:,:,0]+ \
                        (A_X[:,:,:,:,1] * points_X_batch) + \
                        (A_X[:,:,:,:,2] * points_Y_batch) + \
-                       tf.sum(W_X * tf.broadcast_to(U, shape=W_X.shape), axis=4)
+                       tf.reduce_sum(W_X * tf.broadcast_to(U, shape=W_X.shape), axis=4)
 
         points_Y_prime = A_Y[:,:,:,:,0]+ \
                        (A_Y[:,:,:,:,1] * points_X_batch) + \
                        (A_Y[:,:,:,:,2] * points_Y_batch) + \
-                       tf.sum(W_Y * tf.broadcast_to(U, shape=W_Y.shape), axis=4)
+                       tf.reduce_sum(W_Y * tf.broadcast_to(U, shape=W_Y.shape), axis=4)
 
         return tf.concat([points_X_prime,points_Y_prime], axis=3)
