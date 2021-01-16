@@ -31,6 +31,8 @@ Read about this STN tutorial to more understand the STN:
 Implementation of STN on this git:
     https://github.com/kevinzakka/spatial-transformer-network
 
+Implementation tutorial of STN using pytorch:
+    https://pytorch.org/tutorials/intermediate/spatial_transformer_tutorial.html
 """
 # %%
 
@@ -44,7 +46,7 @@ import time
 
 from core.dataset import VtonPrep
 from core.utils import get_pose_map, show_img, preprocess_image
-from core.network.gmm import GMM, SimpleGMM
+from core.network.gmm import GMMTPS, SimpleGMM, GMMSTN
 
 from IPython import display
 
@@ -61,19 +63,25 @@ ds = VtonPrep(base)
 # %%
 
 tfds_train = ds.get_tf_train_dataset()
-steps_per_epoch = 10000 // BATCH_SIZE
+steps_per_epoch = 1000 // BATCH_SIZE
 tfds_train = tfds_train.batch(BATCH_SIZE).repeat()
 
 
 # %%
 
-optimizer = tf.keras.optimizers.Adam(learning_rate=0.0005)
+optimizer = tf.keras.optimizers.Adam(learning_rate=0.001, beta_1=0.5, beta_2=0.999)
+
+# def l1_loss(real, pred):
+#     return tf.reduce_sum(tf.keras.losses.MAE(real, pred))
 
 def l1_loss(real, pred):
-    return tf.keras.losses.MAE(real, pred)
+    return tf.keras.losses.MeanAbsoluteError()(real, pred)
 
-@tf.function
-def train_step(model, data, step):
+def bin_cross_loss(real, pred):
+    return tf.keras.losses.BinaryCrossentropy()(real, pred)
+
+# @tf.function
+def train_step(model, data, epoch, step):
     with tf.device('/device:GPU:0'):
         with tf.GradientTape() as tape:
             # Prepare data
@@ -90,12 +98,11 @@ def train_step(model, data, step):
             agnostic = tf.concat([data['body-mask'], data['face-hair'], data['pose']], axis=3)
 
             # Eval
-            output = model(agnostic, data['cloth-mask'], training=False)
+            theta, grid, output = model(agnostic, data['cloth-mask'], training=True)
 
             # Compute the loss value for this minibatch.
-            loss = l1_loss(data['actual-cloth-mask'], output)
-            
-            print(f"loss for this batch at step: {step + 1}: {loss }")
+            loss = l1_loss(data['actual-cloth-mask'], output[:,:,:,0])
+            # loss = bin_cross_loss(data['actual-cloth-mask'], output)
 
         # Use the gradient tape to automatically retrieve
         # the gradients of the trainable variables with respect to the loss.
@@ -105,36 +112,45 @@ def train_step(model, data, step):
         # the value of the variables to minimize the loss.
         optimizer.apply_gradients(zip(grads, model.trainable_weights))
 
+        # For visualization
+        if step % 20 == 0:
+            display.clear_output(wait=True)
+            print(f"Epoch {epoch + 1}, step {step + 1}:")
+            # print("Input cloth:")
+            # print("Predictions:")
+
+            # show_img(data['body-mask'][0])
+            # show_img(data['face-hair'][0])
+            # show_img(data['pose'][0])
+            # show_img(data['cloth-mask'][0])
+            show_img(data['actual-cloth-mask'][0])
+            show_img(output[0])
+            print(f"loss for this batch at step: {step + 1}: {loss }")
+
     return output
 
-def train(model, n_epochs, steps_per_epoch):
-    with tf.device('/device:CPU:0'):
-        for epoch in range(n_epochs):
-            print("\nStart of epoch %d" % (epoch + 1,))
-            # Iterate over the batches of the dataset.
-            for step, data in enumerate(tfds_train.take(10)):
-                output = train_step(model, data, step)
 
-                # For visualization
-                # if step % 20 == 0:
-                # display.clear_output(wait=True)
-                # print(f"Epoch {epoch + 1}, step {step + 1}:")
-                # print("Input cloth:")
-                # print("Predictions:")
-
-                show_img(output[0])
+    
 
 
 # %%
 
 
 N_EPOCHS = 1
-model = SimpleGMM(batch_size=BATCH_SIZE)
+# steps_per_epoch = 1000
+model = GMMTPS(batch_size=BATCH_SIZE)
 
 
 # %%
 
-train(model, N_EPOCHS, steps_per_epoch)
+with tf.device('/device:CPU:0'):
+    for epoch in range(N_EPOCHS):
+        print("\nStart of epoch %d" % (epoch + 1,))
+        # Iterate over the batches of the dataset.
+        for step, data in enumerate(tfds_train.take(10)):
+            output = train_step(model, data, epoch, step)
+
+        
 
 
 # %%
@@ -145,7 +161,25 @@ data = list(tfds_train.take(1))[0]
 agnostic = tf.concat([data['body-mask'], data['face-hair'], data['pose']], axis=3)
 # Eval
 with tf.device('/device:GPU:0'):
-    output = model(agnostic, data['cloth-mask'], training=False)
+    theta, grid, output = model(agnostic, data['cloth-mask'], training=False)
 
-output.shape
+# %%
 
+show_img(output[0,:,:,:])
+
+
+# %%
+
+
+output[0,:,:,0]
+
+
+# %%
+
+
+a = tf.constant([[4,0],[9,6]])
+# a [a==5] = 1
+
+# %%
+
+a + tf.cast(a == 0, a.dtype)
