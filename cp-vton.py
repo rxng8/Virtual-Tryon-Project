@@ -160,7 +160,7 @@ with tf.device('/device:CPU:0'):
 data = list(tfds_train.take(1))[0]
 agnostic = tf.concat([data['body-mask'], data['face-hair'], data['pose']], axis=3)
 # Eval
-with tf.device('/device:GPU:0'):
+with tf.device('/device:CPU:0'):
     theta, grid, output = model(agnostic, data['cloth-mask'], training=False)
 
 # %%

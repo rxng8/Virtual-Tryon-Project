@@ -38,26 +38,26 @@ class GMMTPS(Model):
 
         image_tensor = self.extractorA(batch_input_image)
         image_tensor = self.normalizer(image_tensor)
-        # print("Done image_tensor")
+        print(f"Done image_tensor: {image_tensor.shape}")
 
         cloth_tensor = self.extractorB(batch_input_cloth)
         cloth_tensor = self.normalizer(cloth_tensor)
-        # print("Done cloth_tensor ")
+        print(f"Done cloth_tensor: {cloth_tensor.shape}")
 
         correlation_tensor = self.correlator(image_tensor, cloth_tensor)
-        # print("Done correlation_tensor ")
+        print(f"Done correlation_tensor: {correlation_tensor.shape}")
 
         theta_tensor = self.regressor(correlation_tensor)
-        # print("Done theta_tensor ")
+        print(f"Done theta_tensor: {theta_tensor.shape}")
 
         tps_grid = self.grid_gen(theta_tensor)
-        # print("Done tps_grid ")
+        print(f"Done tps_grid: {tps_grid.shape}")
 
         x_s = tps_grid[:, :, :, 0]
         y_s = tps_grid[:, :, :, 1]
 
         transformed = self.transformer(batch_input_cloth, x_s, y_s)
-        # print("Done transformed ")
+        print(f"Done transformed: {transformed.shape}")
 
         return theta_tensor, tps_grid, transformed
 
